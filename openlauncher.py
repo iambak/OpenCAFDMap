@@ -18,6 +18,7 @@ import esys  # noqa: E402
 import pipeline  # noqa: E402
 import updater  # noqa: E402
 import appicon  # noqa: E402
+import ui_theme as ui  # noqa: E402
 
 FIELDS = [  # key, label, kind, help
     ("esys_dir", "E-Sys folder", "dir", "contains E-Sys.bat, jre\\ and lib\\"),
@@ -50,108 +51,233 @@ class OpenLauncher(tk.Tk):
         super().__init__()
         self.title(f"OpenLauncher {app_version()} - Open CAFD Map".replace("  ", " "))
         appicon.apply(self)
-        self.geometry("980x720")
+        self.geometry("1120x780")
+        self.minsize(980, 680)
+        self.f = ui.apply(self)
         self.cfg = config.load()
         self.vars = {}
         self.busy = False
         self.q = queue.Queue()
         self._build()
+        ui.dark_titlebar(self)
         self.refresh_status()
+        self.show_page("home")
         self.after(100, self._drain)
         self.after(800, lambda: self.check_updates(silent=True))
         self.after(1200, lambda: self.check_launcher(silent=True))
 
     # ---------------------------------------------------------------- layout
     def _build(self):
-        pf = ttk.LabelFrame(self, text="Paths", padding=6)
-        pf.pack(fill="x", padx=8, pady=(8, 4))
-        contexts = ["none"] + sorted(os.path.basename(p) for p in glob.glob(os.path.join(config.DATA, "contexts", "*.xml")))
-        for r, (key, label, kind, hlp) in enumerate(FIELDS):
-            ttk.Label(pf, text=label).grid(row=r, column=0, sticky="w", padx=(0, 6))
-            v = self.vars[key] = tk.StringVar(value=str(self.cfg.get(key) or ""))
-            if kind == "context":
-                w = ttk.Combobox(pf, textvariable=v, values=contexts, state="readonly", width=60)
-            else:
-                w = ttk.Entry(pf, textvariable=v, width=70)
-            w.grid(row=r, column=1, sticky="we")
-            if kind in ("dir", "file"):
-                ttk.Button(pf, text="Browse", width=8, command=lambda k=key, t=kind: self.browse(k, t)).grid(row=r, column=2, padx=4)
-            ttk.Label(pf, text=hlp, foreground="#666").grid(row=r, column=3, sticky="w")
-        self.all_versions = tk.BooleanVar(value=bool(self.cfg.get("export_all_versions")))
-        ttk.Checkbutton(pf, text="Export every CAFD version (bigger; otherwise newest 3 + the versions in your "
-                                  "BimmerCode backups)", variable=self.all_versions).grid(row=len(FIELDS), column=1,
-                                                                                          columnspan=3, sticky="w")
-        self.try_untested = tk.BooleanVar(value=bool(self.cfg.get("try_untested_esys")))
-        ttk.Checkbutton(pf, text="Try anyway: allow Cheat Sheet Apply on E-Sys versions OpenLauncher wasn't tested with "
-                                  "(tested: 25.x)", variable=self.try_untested).grid(row=len(FIELDS) + 1, column=1,
-                                                                                    columnspan=3, sticky="w")
-        ttk.Button(pf, text="Save settings", command=self.save).grid(row=len(FIELDS) + 2, column=1, sticky="w", pady=4)
-        pf.columnconfigure(1, weight=1)
+        C = ui.C
+        # sidebar ---------------------------------------------------------------
+        side = ttk.Frame(self, style="Side.TFrame", width=236)
+        side.pack(side="left", fill="y")
+        side.pack_propagate(False)
+        brand = ttk.Frame(side, style="Side.TFrame", padding=(18, 22, 18, 18))
+        brand.pack(fill="x")
+        try:
+            self._logo = tk.PhotoImage(file=appicon.PNG).subsample(7)
+            tk.Label(brand, image=self._logo, bg=C["side"], bd=0).pack(side="left", padx=(0, 10))
+        except tk.TclError:
+            pass
+        bt = ttk.Frame(brand, style="Side.TFrame")
+        bt.pack(side="left")
+        ttk.Label(bt, text="OpenLauncher", style="Side.TLabel").pack(anchor="w")
+        ttk.Label(bt, text=(app_version() or "source checkout"), style="SideMuted.TLabel").pack(anchor="w")
+        self.nav = {}
+        for key, text in (("home", "⌂   Home"), ("settings", "⚙   Settings"), ("activity", "≡   Activity")):
+            b = ttk.Button(side, text=text, style="Nav.TButton", command=lambda k=key: self.show_page(k))
+            b.pack(fill="x", padx=10, pady=1)
+            self.nav[key] = b
+        foot = ttk.Frame(side, style="Side.TFrame", padding=(18, 14))
+        foot.pack(side="bottom", fill="x")
+        ttk.Label(foot, text="Open CAFD Map\nCoding names for E-Sys\nFree and open source",
+                  style="SideMuted.TLabel", justify="left").pack(anchor="w")
+        tk.Frame(self, bg=C["border"], width=1).pack(side="left", fill="y")
 
-        self.status = tk.StringVar()
-        ttk.Label(self, textvariable=self.status, padding=(10, 2), justify="left").pack(fill="x")
+        # main area ---------------------------------------------------------------
+        main = ttk.Frame(self, padding=(28, 20, 28, 16))
+        main.pack(side="left", fill="both", expand=True)
+        head = ttk.Frame(main)
+        head.pack(fill="x")
+        self.page_title = tk.StringVar()
+        ttk.Label(head, textvariable=self.page_title, style="Title.TLabel").pack(side="left")
+        self.page_sub = tk.StringVar()
+        ttk.Label(head, textvariable=self.page_sub, style="Muted.TLabel").pack(side="left", padx=14, pady=(8, 0))
+        slot = tk.Frame(main, bg=ui.C["bg"], height=3)     # fixed-height slot: the bar shows only while busy
+        slot.pack(fill="x", pady=(10, 12))
+        slot.pack_propagate(False)
+        self.progress = ttk.Progressbar(slot, mode="indeterminate", style="Busy.Horizontal.TProgressbar")
+        self._progress_on = False
+        self.pages = {k: ttk.Frame(main) for k in ("home", "settings", "activity")}
+        self._build_activity(self.pages["activity"])     # first: the other pages write to the log
+        self._build_settings(self.pages["settings"])
+        self._build_home(self.pages["home"])
 
-        af = ttk.Frame(self, padding=(8, 2))
-        af.pack(fill="x")
-        b = ttk.LabelFrame(af, text="Definitions", padding=6)
-        b.pack(side="left", fill="y")
+    def show_page(self, key):
+        for k, p in self.pages.items():
+            p.pack_forget()
+            self.nav[k].configure(style="NavOn.TButton" if k == key else "Nav.TButton")
+        self.pages[key].pack(fill="both", expand=True)
+        self.page_title.set({"home": "Home", "settings": "Settings", "activity": "Activity"}[key])
+        self.page_sub.set({"home": "Start E-Sys, build definitions, stay up to date",
+                           "settings": "Paths and options, saved to config.json",
+                           "activity": "Everything OpenLauncher did this session"}[key])
+
+    def _build_home(self, page):
+        # hero: start E-Sys -------------------------------------------------------
+        hero = ui.card(page, padding=(22, 18))
+        hero.outer.pack(fill="x")
+        left = ttk.Frame(hero, style="Card.TFrame")
+        left.pack(side="left", fill="x", expand=True)
+        ttk.Label(left, text="Start coding", style="CardH.TLabel").pack(anchor="w")
+        ttk.Label(left, text="Opens E-Sys with BMW names and value labels in the CAF and FDL views. "
+                             "No build needed.", style="CardMuted.TLabel").pack(anchor="w", pady=(2, 12))
+        row = ttk.Frame(left, style="Card.TFrame")
+        row.pack(anchor="w")
+        self.btn_esys = ttk.Button(row, text="▶  Start E-Sys", style="Hero.TButton", command=self.start_esys)
+        self.btn_esys.pack(side="left")
+        ttk.Button(row, text="BimmerCode Backup Editor", command=self.start_bc).pack(side="left", padx=12)
+        self.esys_info = tk.StringVar()
+        ttk.Label(hero, textvariable=self.esys_info, style="CardMuted.TLabel", justify="right").pack(side="right",
+                                                                                                   anchor="n")
+
+        # status cards ------------------------------------------------------------
+        stats = ttk.Frame(page)
+        stats.pack(fill="x", pady=14)
+        self.stat = {}
+        for i, (key, title) in enumerate((("esys", "E-SYS"), ("psdz", "PSDZDATA"), ("defs", "DEFINITIONS"),
+                                          ("db", "DATABASE"))):
+            c = ui.card(stats, padding=(16, 12))
+            c.outer.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 7, 0 if i == 3 else 7))
+            stats.columnconfigure(i, weight=1, uniform="stat")
+            ttk.Label(c, text=title, style="CardMuted.TLabel").pack(anchor="w")
+            v, d = tk.StringVar(), tk.StringVar()
+            ttk.Label(c, textvariable=v, style="Stat.TLabel").pack(anchor="w", pady=(2, 0))
+            dl = ttk.Label(c, textvariable=d, style="StatOk.TLabel")
+            dl.pack(anchor="w")
+            self.stat[key] = (v, d, dl)
+
+        # definitions + updates ---------------------------------------------------
+        cols = ttk.Frame(page)
+        cols.pack(fill="x")
+        cols.columnconfigure(0, weight=1, uniform="col")
+        cols.columnconfigure(1, weight=1, uniform="col")
+        d = ui.card(cols)
+        d.outer.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        ttk.Label(d, text="Definitions", style="CardH.TLabel").pack(anchor="w", pady=(0, 8))
         self.btns = []
-        for text, step, tip in (("Build definitions", "build", "optional for E-Sys; needed for the Backup Editor"),
-                                ("Apply names", "names", "after editing names\\*.tsv / my_names.tsv"),
-                                ("Check contributions", "check", "names + definition XMLs, before you contribute")):
-            row = ttk.Frame(b)  # the row is created first so it doesn't cover its button
-            row.pack(fill="x", pady=1)
-            w = ttk.Button(row, text=text, width=26, command=lambda s=step: self.run_step(s))
+        for text, step, tip in (("Build definitions", "build", "For the Backup Editor"),
+                                ("Apply names", "names", "After editing names"),
+                                ("Check contributions", "check", "Before you contribute")):
+            r = ttk.Frame(d, style="Card.TFrame")
+            r.pack(fill="x", pady=3)
+            w = ttk.Button(r, text=text, width=20, command=lambda s=step: self.run_step(s))
             w.pack(side="left")
-            ttk.Label(row, text=tip, foreground="#666").pack(side="left", padx=6)
+            ttk.Label(r, text=tip, style="CardMuted.TLabel").pack(side="left", padx=10)
             self.btns.append(w)
-        t = ttk.LabelFrame(af, text="Tools", padding=6)
-        t.pack(side="left", fill="y", padx=8)
-        self.btn_esys = ttk.Button(t, text="Start E-Sys with Open CAFD Map", width=32, command=self.start_esys)
-        self.btn_esys.pack(fill="x", pady=1)
-        ttk.Button(t, text="BimmerCode Backup Editor", width=32, command=self.start_bc).pack(fill="x", pady=1)
-        o = ttk.LabelFrame(af, text="Folders", padding=6)
-        o.pack(side="left", fill="y")
-        ttk.Button(o, text="Workspace", width=16, command=lambda: self.open_dir(config.paths().workspace)).pack(pady=1)
-        ttk.Button(o, text="Names", width=16, command=lambda: self.open_dir(config.NAMES)).pack(pady=1)
-        ttk.Button(o, text="Logs", width=16, command=lambda: self.open_dir(config.paths().logs)).pack(pady=1)
-        ttk.Button(o, text="Desktop shortcut", width=16, command=self.make_shortcut).pack(pady=1)
 
-        u = ttk.LabelFrame(self, text="Updates", padding=6)
-        u.pack(fill="x", padx=8, pady=(4, 0))
+        u = ui.card(cols)
+        u.outer.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        ttk.Label(u, text="Updates", style="CardH.TLabel").pack(anchor="w", pady=(0, 8))
         # each button has three states: "Check for updates" -> "Update now" | "... up to date"
-        ur = ttk.Frame(u)
-        ur.pack(fill="x", pady=1)
-        self.btn_update = ttk.Button(ur, text="Check for updates", width=26, command=self.update_clicked)
+        ttk.Label(u, text="DEFINITIONS (NAMES)", style="CardMuted.TLabel").pack(anchor="w")
+        ur = ttk.Frame(u, style="Card.TFrame")
+        ur.pack(fill="x", pady=(2, 10))
+        self.btn_update = ttk.Button(ur, text="Check for updates", width=22, command=self.update_clicked)
         self.btn_update.pack(side="left")
         self.update_state = "check"
         self.update_label = tk.StringVar()
-        ttk.Label(ur, textvariable=self.update_label).pack(side="left", padx=8)
+        ttk.Label(ur, textvariable=self.update_label, style="CardMuted.TLabel", wraplength=230,
+                  justify="left").pack(side="left", padx=10)
         self.show_versions(None)
-        lr = ttk.Frame(u)
-        lr.pack(fill="x", pady=1)
-        self.btn_launcher = ttk.Button(lr, text="Check for launcher update", width=26, command=self.launcher_clicked)
+        ttk.Label(u, text="LAUNCHER", style="CardMuted.TLabel").pack(anchor="w")
+        lr = ttk.Frame(u, style="Card.TFrame")
+        lr.pack(fill="x", pady=(2, 0))
+        self.btn_launcher = ttk.Button(lr, text="Check for launcher update", width=22, command=self.launcher_clicked)
         self.btn_launcher.pack(side="left")
         # git clones only: move to origin/main even with local edits/commits (they are saved first)
-        self.btn_force = ttk.Button(lr, text="Force update", width=14, command=self.force_launcher_update)
+        self.btn_force = ttk.Button(lr, text="Force update", style="Ghost.TButton", command=self.force_launcher_update)
         if updater.is_git_clone():
-            self.btn_force.pack(side="left", padx=(4, 0))
+            self.btn_force.pack(side="left", padx=(6, 0))
         self.launcher_state = "check"
         self.launcher_label = tk.StringVar()
-        ttk.Label(lr, textvariable=self.launcher_label).pack(side="left", padx=8)
+        ttk.Label(u, textvariable=self.launcher_label, style="CardMuted.TLabel", wraplength=380,
+                  justify="left").pack(anchor="w", pady=(6, 0))
         self.set_launcher_state("check")
 
-        lf = ttk.Frame(self, padding=(8, 4, 8, 8))
-        lf.pack(fill="both", expand=True)
-        self.log = tk.Text(lf, wrap="none", height=14)
-        vs = ttk.Scrollbar(lf, orient="vertical", command=self.log.yview)
-        hs = ttk.Scrollbar(lf, orient="horizontal", command=self.log.xview)
+        # folders + latest activity -----------------------------------------------
+        fo = ui.card(page, padding=(16, 10))
+        fo.outer.pack(fill="x", pady=(14, 0))
+        for text, cmd in (("Workspace", lambda: self.open_dir(config.paths().workspace)),
+                          ("Names", lambda: self.open_dir(config.NAMES)),
+                          ("Logs", lambda: self.open_dir(config.paths().logs)),
+                          ("Desktop shortcut", self.make_shortcut)):
+            ttk.Button(fo, text=text, style="Ghost.TButton", command=cmd).pack(side="left", padx=(0, 6))
+        self.last_line = tk.StringVar(value="Ready.")
+        last = ttk.Label(fo, textvariable=self.last_line, style="CardMuted.TLabel", cursor="hand2")
+        last.pack(side="right")
+        last.bind("<Button-1>", lambda e: self.show_page("activity"))
+
+    def _build_settings(self, page):
+        s = ui.card(page, padding=(22, 18))
+        s.outer.pack(fill="x")
+        ttk.Label(s, text="Paths", style="CardH.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        contexts = ["none"] + sorted(os.path.basename(p) for p in glob.glob(os.path.join(config.DATA, "contexts", "*.xml")))
+        for i, (key, label, kind, hlp) in enumerate(FIELDS):
+            r = 1 + i * 2
+            ttk.Label(s, text=label, style="CardBold.TLabel").grid(row=r, column=0, sticky="w", padx=(0, 18))
+            v = self.vars[key] = tk.StringVar(value=str(self.cfg.get(key) or ""))
+            if kind == "context":
+                w = ttk.Combobox(s, textvariable=v, values=contexts, state="readonly")
+            else:
+                w = ttk.Entry(s, textvariable=v)
+            w.grid(row=r, column=1, sticky="we")
+            if kind in ("dir", "file"):
+                ttk.Button(s, text="Browse", style="Ghost.TButton",
+                           command=lambda k=key, t=kind: self.browse(k, t)).grid(row=r, column=2, padx=(8, 0))
+            ttk.Label(s, text=hlp[:1].upper() + hlp[1:], style="CardMuted.TLabel").grid(row=r + 1, column=1,
+                                                                                     sticky="w", pady=(1, 8))
+        s.columnconfigure(1, weight=1)
+
+        o = ui.card(page, padding=(22, 16))
+        o.outer.pack(fill="x", pady=(14, 0))
+        ttk.Button(o, text="Save settings", style="Accent.TButton", command=self.save).pack(side="right", anchor="s")
+        ttk.Label(o, text="Options", style="CardH.TLabel").pack(anchor="w", pady=(0, 8))
+        self.all_versions = tk.BooleanVar(value=bool(self.cfg.get("export_all_versions")))
+        ttk.Checkbutton(o, text="Export every CAFD version (bigger; otherwise the newest 3 plus the versions in your "
+                                "BimmerCode backups)", variable=self.all_versions,
+                        style="Card.TCheckbutton").pack(anchor="w", pady=2)
+        self.try_untested = tk.BooleanVar(value=bool(self.cfg.get("try_untested_esys")))
+        ttk.Checkbutton(o, text="Try anyway: allow Cheat Sheet Apply on E-Sys versions OpenLauncher wasn't tested "
+                                "with (tested: 25.x)", variable=self.try_untested,
+                        style="Card.TCheckbutton").pack(anchor="w", pady=2)
+
+    def _build_activity(self, page):
+        bar = ttk.Frame(page)
+        bar.pack(fill="x", pady=(0, 8))
+        ttk.Button(bar, text="Open logs folder", style="Ghost.TButton",
+                   command=lambda: self.open_dir(config.paths().logs)).pack(side="right")
+        ttk.Button(bar, text="Clear", style="Ghost.TButton",
+                   command=lambda: self.log.delete("1.0", "end")).pack(side="right", padx=6)
+        box = tk.Frame(page, bg=ui.C["border"])
+        box.pack(fill="both", expand=True)
+        inner = tk.Frame(box, bg=ui.C["log"])
+        inner.pack(fill="both", expand=True, padx=1, pady=1)
+        self.log = tk.Text(inner, wrap="none", bg=ui.C["log"], fg="#d6d6dd", insertbackground=ui.C["text"],
+                           selectbackground=ui.C["accent"], relief="flat", bd=0, padx=12, pady=10,
+                           font=self.f["mono"])
+        self.log.tag_configure("err", foreground=ui.C["bad"])
+        self.log.tag_configure("head", foreground=ui.C["accent_hi"])
+        self.log.tag_configure("ok", foreground=ui.C["ok"])
+        vs = ttk.Scrollbar(inner, orient="vertical", command=self.log.yview)
+        hs = ttk.Scrollbar(inner, orient="horizontal", command=self.log.xview)
         self.log.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
         self.log.grid(row=0, column=0, sticky="nsew")
         vs.grid(row=0, column=1, sticky="ns")
         hs.grid(row=1, column=0, sticky="ew")
-        lf.rowconfigure(0, weight=1)
-        lf.columnconfigure(0, weight=1)
+        inner.rowconfigure(0, weight=1)
+        inner.columnconfigure(0, weight=1)
 
     # ---------------------------------------------------------------- settings
     def browse(self, key, kind):
@@ -176,6 +302,12 @@ class OpenLauncher(tk.Tk):
         if not quiet:
             self.write("Settings saved to config.json")
 
+    def _set_stat(self, key, value, detail, level="ok"):
+        v, d, dl = self.stat[key]
+        v.set(value)
+        d.set(detail)
+        dl.configure(style={"ok": "StatOk.TLabel", "warn": "StatWarn.TLabel", "bad": "StatBad.TLabel"}[level])
+
     def refresh_status(self):
         P = config.Paths(self.cfg)
         d = self.cfg.get("esys_dir") or ""
@@ -183,15 +315,23 @@ class OpenLauncher(tk.Tk):
         psdz_ok = bool(P.psdzdata) and os.path.isdir(os.path.join(P.psdzdata, "swe", "cafd"))
         n_cache = len(glob.glob(os.path.join(P.cache, "cafd_*.xml.gz")))
         n_defs = len(glob.glob(os.path.join(P.generated, "CAFD_*.xml")))
-        self.status.set(
-            f"E-Sys: {'found' if esys_ok else 'NOT FOUND'}    psdzdata: {P.psdzdata or '-'} "
-            f"({'ok' if psdz_ok else 'not found'})    decrypted CAFDs: {n_cache}    "
-            f"DB: {'yes' if os.path.exists(P.db) else 'no'}    E-Sys definitions: {n_defs}")
+        ver = esys.esys_version(d) if esys_ok else ""
+        self._set_stat("esys", ver or ("Found" if esys_ok else "Not found"),
+                       os.path.basename(d.rstrip("\\/")) if esys_ok else "Set the E-Sys folder in Settings",
+                       "ok" if esys_ok else "bad")
+        self._set_stat("psdz", "Ready" if psdz_ok else "Not found",
+                       (P.psdzdata or "-") if psdz_ok else "Check the psdzdata folder", "ok" if psdz_ok else "bad")
+        self._set_stat("defs", f"{n_defs:,}", f"{self.cfg.get('series', '')}  ·  {n_cache:,} decrypted"
+                       if n_cache else f"{self.cfg.get('series', '')}  ·  built on demand", "ok")
+        has_db = os.path.exists(P.db)
+        self._set_stat("db", "Built" if has_db else "Not built",
+                       "Backup Editor ready" if has_db else "Only needed for the Backup Editor", "ok" if has_db else "warn")
+        self.esys_info.set(f"E-Sys {ver}\nmain series {self.cfg.get('series', '')}" if esys_ok else "")
 
     # ---------------------------------------------------------------- definition updates
     def show_versions(self, available):
         cur = updater.installed().get("version", "0")
-        self.update_label.set(f"Installed definitions: {cur}" + (f"     Available: {available}" if available else ""))
+        self.update_label.set(f"Installed {cur}" + (f"\nAvailable {available}" if available and available != cur else ""))
 
     def set_update_state(self, state, available=None):
         self.update_state = state
@@ -382,10 +522,24 @@ class OpenLauncher(tk.Tk):
 
     # ---------------------------------------------------------------- actions
     def write(self, line):
-        self.log.insert("end", line + "\n")
+        up = line.lstrip().upper()
+        tag = ("err" if up.startswith(("FAILED", "UPDATE FAILED", "LAUNCHER UPDATE FAILED", "ERROR")) else
+               "head" if line.startswith("==") else
+               "ok" if up.startswith(("DONE", "E-SYS STARTED", "SETTINGS SAVED", "SHORTCUT CREATED")) else None)
+        self.log.insert("end", line + "\n", (tag,) if tag else ())
         self.log.see("end")
+        if line.strip():
+            self.last_line.set(line.strip()[:110])
 
     def _drain(self):
+        if self.busy != self._progress_on:        # thin red bar under the title while something runs
+            self._progress_on = self.busy
+            if self.busy:
+                self.progress.pack(fill="both", expand=True)
+                self.progress.start(12)
+            else:
+                self.progress.stop()
+                self.progress.pack_forget()
         try:
             while True:
                 item = self.q.get_nowait()
