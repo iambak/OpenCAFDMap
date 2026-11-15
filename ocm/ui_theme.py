@@ -49,6 +49,32 @@ def dark_titlebar(win):
         pass
 
 
+def _checkbox_images(root):
+    """16x16 checkbox images drawn pixel by pixel (no image library): off, on (red + white tick), greyed variants."""
+    def box(fill, border, tick=None):
+        img = tk.PhotoImage(master=root, width=20, height=16)          # 4 px transparent gap before the label
+        for y in range(1, 15):
+            row = []
+            for x in range(1, 15):
+                edge = x in (1, 14) or y in (1, 14)
+                row.append(border if edge else fill)
+            img.put("{" + " ".join(row) + "}", to=(1, y))
+        if tick:
+            pts = [(4, 8), (5, 9), (6, 10), (7, 11), (8, 10), (9, 9), (10, 8), (11, 7), (12, 6)]
+            for x, y in pts:
+                for dx, dy in ((0, 0), (0, -1), (1, 0)):
+                    img.put(tick, to=(x + dx, y + dy))
+        return img
+    imgs = {
+        "off": box(C["card2"], "#4a4a54"),
+        "on": box(C["accent"], C["accent"], "#ffffff"),
+        "off_dis": box(C["card"], "#33333a"),
+        "on_dis": box("#5a2a2f", "#5a2a2f", "#9b9ba7"),
+    }
+    root._ocm_checkbox_imgs = imgs        # keep references
+    return imgs
+
+
 def apply(root):
     f = fonts(root)
     root.configure(bg=C["bg"])
@@ -77,6 +103,8 @@ def apply(root):
                               ("Stat.TLabel", C["card"], C["text"], f["stat"]),
                               ("StatOk.TLabel", C["card"], C["ok"], f["small"]),
                               ("StatWarn.TLabel", C["card"], C["warn"], f["small"]),
+                              ("StatWarnCard.TLabel", C["card"], "#c9a46a", f["small"]),
+                              ("CardLink.TLabel", C["card"], C["muted"], f["bold"]),
                               ("StatBad.TLabel", C["card"], C["bad"], f["small"])):
         st.configure(name, background=bg, foreground=fg, font=fnt)
     # buttons
@@ -115,9 +143,19 @@ def apply(root):
     root.option_add("*TCombobox*Listbox.selectBackground", C["accent"])
     root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
     root.option_add("*TCombobox*Listbox.font", f["body"])
+    ci = _checkbox_images(root)
+    try:
+        st.element_create("ocm.Checkbutton.indicator", "image", ci["off"], ("disabled", "selected", ci["on_dis"]),
+                          ("selected", ci["on"]), ("disabled", ci["off_dis"]))
+        st.layout("Card.TCheckbutton", [("Checkbutton.padding", {"sticky": "nswe", "children": [
+            ("ocm.Checkbutton.indicator", {"side": "left", "sticky": ""}),
+            ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
+                ("Checkbutton.label", {"sticky": "nswe"})]})]})])
+    except tk.TclError:
+        pass                                   # element already defined (second window): keep the default look
     st.configure("Card.TCheckbutton", background=C["card"], foreground=C["text"], indicatorbackground=C["card2"],
                  indicatorforeground=C["accent"], focusthickness=0)
-    st.map("Card.TCheckbutton", background=[("active", C["card"])],
+    st.map("Card.TCheckbutton", background=[("active", C["card"])], foreground=[("disabled", C["faint"])],
            indicatorbackground=[("selected", C["accent"]), ("active", C["card2"])],
            indicatorforeground=[("selected", "#ffffff")])
     # scrollbars + progress

@@ -201,6 +201,7 @@ class OpenLauncher(tk.Tk):
         self.btn_esys = ttk.Button(row, text="▶  Start E-Sys", style="Hero.TButton", command=self.start_esys)
         self.btn_esys.pack(side="left")
         ttk.Button(row, text="BimmerCode Backup Editor", command=self.start_bc).pack(side="left", padx=12)
+        self._build_launch_options(left)
         self.esys_info = tk.StringVar()
         ttk.Label(hero, textvariable=self.esys_info, style="CardMuted.TLabel", justify="right").pack(side="right",
                                                                                                    anchor="n")
@@ -288,6 +289,70 @@ class OpenLauncher(tk.Tk):
         last.pack(fill="x")
         last.bind("<Button-1>", lambda e: self.show_page("activity"))
         self._last_box.bind("<Configure>", lambda e: self._fit_last())
+
+    def _build_launch_options(self, parent):
+        """"Launch options" under Start E-Sys: a dropdown menu of the OpenLauncher features E-Sys gets (or a clean
+        boot), and a one-line summary of what's on."""
+        C = ui.C
+        self.opt_vars = {k: tk.BooleanVar(value=esys.option(self.cfg, k))
+                         for k in [k for k, _, _ in esys.LAUNCH_OPTIONS] + ["launch_clean"]}
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(anchor="w", pady=(12, 0))
+        self.btn_opts = ttk.Button(row, text="⚙  Launch options  ▾", style="Ghost.TButton",
+                                   command=self._show_launch_menu)
+        self.btn_opts.pack(side="left")
+        self.opt_summary = ttk.Label(row, style="CardMuted.TLabel")
+        self.opt_summary.pack(side="left", padx=10)
+        m = self.opt_menu = tk.Menu(self, tearoff=0, bg=C["card2"], fg=C["text"], activebackground=C["accent"],
+                                    activeforeground="#ffffff", selectcolor=C["accent"], bd=0, relief="flat",
+                                    disabledforeground=C["faint"], font=self.f["body"])
+        for key, label, hlp in esys.LAUNCH_OPTIONS:
+            m.add_checkbutton(label=f"{label}    –  {hlp}", variable=self.opt_vars[key],
+                              command=lambda k=key: self._set_option(k))
+        m.add_separator()
+        m.add_checkbutton(label="Clean boot (troubleshooting)    –  start your E-Sys.bat as it is, "
+                                "no OpenLauncher features", variable=self.opt_vars["launch_clean"],
+                          command=lambda: self._set_option("launch_clean"))
+        m.add_separator()
+        m.add_command(label="Turn all features on", command=self._all_options_on)
+        self._sync_options()
+
+    def _show_launch_menu(self):
+        b = self.btn_opts
+        self.opt_menu.tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height() + 2)
+
+    def _all_options_on(self):
+        for k in self.opt_vars:
+            self.opt_vars[k].set(k != "launch_clean")
+            self.cfg[k] = k != "launch_clean"
+        config.save(self.cfg)
+        self._sync_options()
+        self.write("Launch options: all features on (from the next E-Sys start)")
+
+    def _set_option(self, key):
+        self.cfg[key] = bool(self.opt_vars[key].get())
+        config.save(self.cfg)
+        self._sync_options()
+        label = dict((k, lbl) for k, lbl, _ in esys.LAUNCH_OPTIONS).get(key, "Clean boot")
+        self.write(f"Launch option: {label} {'on' if self.cfg[key] else 'off'} (from the next E-Sys start)")
+
+    def _sync_options(self):
+        """Clean boot greys out the features; labels off greys out 'on demand'. Summary + Start button follow."""
+        clean = bool(self.opt_vars["launch_clean"].get())
+        labels = bool(self.opt_vars["launch_labels"].get())
+        for i, (key, _, _) in enumerate(esys.LAUNCH_OPTIONS):
+            dis = clean or (key == "launch_on_demand" and not labels)
+            self.opt_menu.entryconfigure(i, state="disabled" if dis else "normal")
+        off = [lbl for k, lbl, _ in esys.LAUNCH_OPTIONS
+               if not self.opt_vars[k].get() or (k == "launch_on_demand" and not labels)]
+        if clean:
+            self.opt_summary.configure(text="Clean boot: E-Sys.bat as it is, no OpenLauncher features",
+                                       style="StatWarn.TLabel")
+        elif off:
+            self.opt_summary.configure(text="Off: " + ", ".join(off), style="StatWarn.TLabel")
+        else:
+            self.opt_summary.configure(text="All features on", style="CardMuted.TLabel")
+        self.btn_esys.configure(text="▶  Start E-Sys (clean boot)" if clean else "▶  Start E-Sys")
 
     def _build_settings(self, page):
         s = ui.card(page, padding=(22, 18))
@@ -695,12 +760,23 @@ class OpenLauncher(tk.Tk):
         except SystemExit as e:
             messagebox.showerror("Start E-Sys", str(e))
             return
-        self.btn_esys.state(["disabled"])
         cfg = dict(self.cfg)
+        if esys.option(cfg, "launch_clean"):      # troubleshooting: E-Sys.bat as is, nothing from OpenLauncher
+            try:
+                pr = esys.launch_clean(cfg)
+            except SystemExit as e:
+                messagebox.showerror("Start E-Sys (clean boot)", str(e))
+                return
+            self.write(f"E-Sys started with a clean boot: {os.path.join(cfg['esys_dir'], 'E-Sys.bat')} as it is "
+                       f"(pid {pr.pid}), without OpenLauncher's features. Turn Clean boot off in Launch options "
+                       "for labels and tools.")
+            return
+        self.btn_esys.state(["disabled"])
 
         def work():
             try:
-                esys.prepare(cfg, self.q.put)
+                if esys.option(cfg, "launch_labels"):
+                    esys.prepare(cfg, self.q.put)       # FA->FP mapping for option-code labels (first start only)
                 d = cfg["esys_dir"]
                 spec = esys.launch_spec(d)
                 self.q.put(f"E-Sys {esys.esys_version(d) or '(unknown version)'}, Java {esys.java_major(d) or '?'}; "

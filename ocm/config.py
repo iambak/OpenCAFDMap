@@ -20,6 +20,9 @@ DEFAULTS = {
     "workspace": "",             # where the DB, decrypted cache, definitions, logs go (default: <repo>\workspace)
     "context": "G20_LCI_US_330ixDrive_89FF.xml",  # data\contexts\ reference vehicle for shorter labels; "none"
     "try_untested_esys": False,    # True: Cheat Sheet Apply also on E-Sys versions OpenLauncher wasn't tested with
+    # Launch options (OpenLauncher > Launch options): what E-Sys gets when started by OpenLauncher
+    "launch_labels": True, "launch_on_demand": True, "launch_tools": True, "launch_backup": True,
+    "launch_clean": False,         # True: start E-Sys.bat exactly as it is (troubleshooting), no OpenLauncher features
     "export_all_versions": False,  # False: newest 3 versions per CAFD + versions found in your BimmerCode backups
     "cheat_sheets_dir": "",      # optional: folder of FDL cheat-sheet XMLs to import (kept local, never committed)
     "ista_db": "",               # optional: decrypted ISTA DiagDocDb sqlite (SA option titles in labels)
