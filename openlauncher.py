@@ -119,7 +119,8 @@ class OpenLauncher(tk.Tk):
         brand = ttk.Frame(side, style="Side.TFrame", padding=(18, 22, 18, 18))
         brand.pack(fill="x")
         try:
-            self._logo = tk.PhotoImage(file=appicon.PNG).subsample(7)
+            small = os.path.join(ROOT, "assets", "openlauncher-40.png")     # pre-scaled, anti-aliased
+            self._logo = tk.PhotoImage(file=small) if os.path.exists(small) else tk.PhotoImage(file=appicon.PNG).subsample(8)
             tk.Label(brand, image=self._logo, bg=C["side"], bd=0).pack(side="left", padx=(0, 10))
         except tk.TclError:
             pass
