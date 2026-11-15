@@ -24,13 +24,55 @@ import ui_theme as ui  # noqa: E402
 FIELDS = [  # key, label, kind, help
     ("esys_dir", "E-Sys folder", "dir", "contains E-Sys.bat, jre\\ and lib\\"),
     ("psdzdata_dir", "psdzdata folder", "dir", "empty = the one E-Sys is set up with"),
-    ("series", "Main series", "text", "G020 = G20/G21/G22/G23/G26/G28/G8x"),
+    ("series", "Main series", "series", "Pick your car's main series, or type another code"),
     ("context", "Reference vehicle", "context", "shortens value labels to what matters for this vehicle class"),
     ("workspace", "Workspace", "dir", "DB, decrypted cache, definitions, logs (never committed)"),
     ("bimmercode_backups_dir", "BimmerCode backups", "dir", "optional: folder with your .cod backups"),
     ("cheat_sheets_dir", "Cheat sheets", "dir", "optional: FDL cheat-sheet XMLs (imported locally only)"),
     ("ista_db", "ISTA DiagDocDb", "file", "optional: decrypted DiagDocDb .sqlite (option-code titles)"),
 ]
+
+
+# Main series (as in the CAFDs' FP info) and the cars they cover, for the Settings dropdown. Any other code can be
+# typed in; only the code is saved.
+MAIN_SERIES = [
+    ("G001", "X3, X4 (G01/G02), X3 M, X4 M"),
+    ("G005", "X5, X6 (G05/G06), X5 M, X6 M"),
+    ("G007", "X7 (G07)"),
+    ("G008", "iX3 (G08)"),
+    ("G011", "7 Series (G11/G12)"),
+    ("G015", "8 Series (G14/G15/G16), M8"),
+    ("G020", "3/4 Series, i4, M3/M4 (G20/G21/G22/G23/G26/G28/G8x)"),
+    ("G029", "Z4 (G29)"),
+    ("G030", "5/6 Series (G30/G31/G32), M5"),
+    ("G038", "5 Series long (G38)"),
+    ("G042", "2 Series Coupé, M2 (G42/G87)"),
+    ("G060", "5 Series (G60)"),
+    ("G070", "7 Series (G70)"),
+    ("J029", "Supra (J29)"),
+    ("U006", "2 Series Active Tourer (U06)"),
+    ("F001", "7 Series (F01/F02)"),
+    ("F010", "5/6 Series (F10-F13, F06), M5/M6"),
+    ("F015", "X5/X6 (F15/F16), X5 M/X6 M"),
+    ("F020", "1/2 Series (F20-F23), M2"),
+    ("F025", "X3/X4 (F25/F26)"),
+    ("F030", "3/4 Series (F30-F36), M3/M4"),
+    ("F040", "1 Series (F40), 2 Gran Coupé (F44)"),
+    ("F045", "2 Active/Gran Tourer (F45/F46)"),
+    ("F056", "MINI (F54-F60)"),
+    ("I001", "i3 (I01)"),
+    ("I020", "iX (I20)"),
+]
+
+
+def series_label(code):
+    name = dict(MAIN_SERIES).get(code)
+    return f"{code}   {name}" if name else code
+
+
+def series_code(text):
+    """'G020   3/4 Series, ...' -> 'G020' (or whatever code was typed)."""
+    return (text or "").strip().split(" ")[0].upper()
 
 
 def app_version():
@@ -238,6 +280,9 @@ class OpenLauncher(tk.Tk):
             v = self.vars[key] = tk.StringVar(value=str(self.cfg.get(key) or ""))
             if kind == "context":
                 w = ttk.Combobox(s, textvariable=v, values=contexts, state="readonly")
+            elif kind == "series":            # editable: the list, or any other code typed in
+                v.set(series_label(v.get()))
+                w = ttk.Combobox(s, textvariable=v, values=[series_label(c) for c, _ in MAIN_SERIES], height=16)
             else:
                 w = ttk.Entry(s, textvariable=v)
             w.grid(row=r, column=1, sticky="we")
@@ -301,11 +346,13 @@ class OpenLauncher(tk.Tk):
     def save(self, quiet=False):
         for key, *_ in FIELDS:
             self.cfg[key] = self.vars[key].get().strip()
+        self.cfg["series"] = series_code(self.cfg["series"]) or "G020"
         self.cfg["export_all_versions"] = self.all_versions.get()
         self.cfg["try_untested_esys"] = self.try_untested.get()
         config.save(self.cfg)
         self.cfg = config.load()
         self.vars["workspace"].set(self.cfg["workspace"])
+        self.vars["series"].set(series_label(self.cfg["series"]))
         self.refresh_status()
         if not quiet:
             self.write("Settings saved to config.json")
