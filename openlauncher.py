@@ -130,9 +130,9 @@ class OpenLauncher(tk.Tk):
         hero.outer.pack(fill="x")
         left = ttk.Frame(hero, style="Card.TFrame")
         left.pack(side="left", fill="x", expand=True)
-        ttk.Label(left, text="Start coding", style="CardH.TLabel").pack(anchor="w")
-        ttk.Label(left, text="Opens E-Sys with BMW names and value labels in the CAF and FDL views. "
-                             "No build needed.", style="CardMuted.TLabel").pack(anchor="w", pady=(2, 12))
+        ttk.Label(left, text="Launch", style="CardH.TLabel").pack(anchor="w")
+        self.launch_sub = tk.StringVar(value="Launch E-Sys or BimmerCode Backup Editor")   # E-Sys version: refresh_status
+        ttk.Label(left, textvariable=self.launch_sub, style="CardMuted.TLabel").pack(anchor="w", pady=(2, 12))
         row = ttk.Frame(left, style="Card.TFrame")
         row.pack(anchor="w")
         self.btn_esys = ttk.Button(row, text="▶  Start E-Sys", style="Hero.TButton", command=self.start_esys)
@@ -167,14 +167,14 @@ class OpenLauncher(tk.Tk):
         d.outer.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
         ttk.Label(d, text="Definitions", style="CardH.TLabel").pack(anchor="w", pady=(0, 8))
         self.btns = []
-        for text, step, tip in (("Build definitions", "build", "For the Backup Editor"),
+        for text, step, tip in (("Build definitions", "build", "Optional for E-Sys, Required for BC Backup Editor"),
                                 ("Apply names", "names", "After editing names"),
                                 ("Check contributions", "check", "Before you contribute")):
             r = ttk.Frame(d, style="Card.TFrame")
             r.pack(fill="x", pady=3)
             w = ttk.Button(r, text=text, width=20, command=lambda s=step: self.run_step(s))
             w.pack(side="left")
-            ttk.Label(r, text=tip, style="CardMuted.TLabel").pack(side="left", padx=10)
+            ttk.Label(r, text=tip, style="CardMuted.TLabel", wraplength=185, justify="left").pack(side="left", padx=10)
             self.btns.append(w)
 
         u = ui.card(cols)
@@ -327,6 +327,8 @@ class OpenLauncher(tk.Tk):
         self._set_stat("db", "Built" if has_db else "Not built",
                        "Backup Editor ready" if has_db else "Only needed for the Backup Editor", "ok" if has_db else "warn")
         self.esys_info.set(f"E-Sys {ver}\nmain series {self.cfg.get('series', '')}" if esys_ok else "")
+        self.launch_sub.set(f"Launch E-Sys {ver} or BimmerCode Backup Editor" if ver
+                            else "Launch E-Sys or BimmerCode Backup Editor")
 
     # ---------------------------------------------------------------- definition updates
     def show_versions(self, available):
