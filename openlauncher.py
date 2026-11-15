@@ -10,6 +10,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "ocm"))
@@ -214,10 +215,17 @@ class OpenLauncher(tk.Tk):
                           ("Logs", lambda: self.open_dir(config.paths().logs)),
                           ("Desktop shortcut", self.make_shortcut)):
             ttk.Button(fo, text=text, style="Ghost.TButton", command=cmd).pack(side="left", padx=(0, 6))
+        # latest log line, shortened to the space left of the folder buttons (full text: Activity page)
         self.last_line = tk.StringVar(value="Ready.")
-        last = ttk.Label(fo, textvariable=self.last_line, style="CardMuted.TLabel", cursor="hand2")
-        last.pack(side="right")
+        self._last_full = "Ready."
+        self._last_font = tkfont.Font(font=self.f["small"])
+        self._last_box = ttk.Frame(fo, style="Card.TFrame")
+        self._last_box.pack(side="left", fill="x", expand=True, padx=(12, 0))
+        last = ttk.Label(self._last_box, textvariable=self.last_line, style="CardMuted.TLabel", cursor="hand2",
+                         anchor="e")
+        last.pack(fill="x")
         last.bind("<Button-1>", lambda e: self.show_page("activity"))
+        self._last_box.bind("<Configure>", lambda e: self._fit_last())
 
     def _build_settings(self, page):
         s = ui.card(page, padding=(22, 18))
@@ -531,7 +539,24 @@ class OpenLauncher(tk.Tk):
         self.log.insert("end", line + "\n", (tag,) if tag else ())
         self.log.see("end")
         if line.strip():
-            self.last_line.set(line.strip()[:110])
+            self._last_full = line.strip()
+            self._fit_last()
+
+    def _fit_last(self):
+        """Middle-ellipsis the latest log line to the width it has (paths keep their start and end)."""
+        text, width = self._last_full, self._last_box.winfo_width() - 4
+        if width <= 20 or self._last_font.measure(text) <= width:
+            self.last_line.set(text)
+            return
+        lo, hi = 0, len(text)
+        while lo < hi:                          # longest head+tail that fits around the ellipsis
+            mid = (lo + hi + 1) // 2
+            cand = text[:mid // 2] + " … " + text[len(text) - (mid - mid // 2):]
+            if self._last_font.measure(cand) <= width:
+                lo = mid
+            else:
+                hi = mid - 1
+        self.last_line.set(text[:lo // 2] + " … " + text[len(text) - (lo - lo // 2):] if lo else "…")
 
     def _drain(self):
         if self.busy != self._progress_on:        # thin red bar under the title while something runs
