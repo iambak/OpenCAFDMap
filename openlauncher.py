@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
@@ -135,8 +136,26 @@ class OpenLauncher(tk.Tk):
             self.nav[key] = b
         foot = ttk.Frame(side, style="Side.TFrame", padding=(18, 14))
         foot.pack(side="bottom", fill="x")
-        ttk.Label(foot, text="Open CAFD Map\nCoding names for E-Sys\nFree and open source",
-                  style="SideMuted.TLabel", justify="left").pack(anchor="w")
+        ttk.Label(foot, text="OpenLauncher", style="SideBold.TLabel").pack(anchor="w")
+        ttk.Label(foot, text="Part of the Open CAFD Map project", style="SideMuted.TLabel").pack(anchor="w")
+        url = f"https://github.com/{updater.UPDATE_REPO}"
+        link = ttk.Frame(foot, style="Side.TFrame", cursor="hand2")
+        link.pack(anchor="w", pady=(6, 10))
+        try:
+            self._gh = tk.PhotoImage(file=os.path.join(ROOT, "assets", "github-16.png"))
+            gh = tk.Label(link, image=self._gh, bg=C["side"], bd=0, cursor="hand2")
+            gh.pack(side="left", padx=(0, 6))
+        except tk.TclError:
+            gh = None
+        lt = ttk.Label(link, text=updater.UPDATE_REPO, style="SideLink.TLabel", cursor="hand2")
+        lt.pack(side="left")
+        for w in filter(None, (link, gh, lt)):
+            w.bind("<Button-1>", lambda e: webbrowser.open(url))
+        lt.bind("<Enter>", lambda e: lt.configure(style="SideLinkHover.TLabel"))
+        lt.bind("<Leave>", lambda e: lt.configure(style="SideLink.TLabel"))
+        ttk.Label(foot, text="OpenLauncher is free. If you paid for it, ask for a refund and download the verified "
+                             "release from GitHub.", style="SideNote.TLabel", wraplength=196,
+                  justify="left").pack(anchor="w")
         tk.Frame(self, bg=C["border"], width=1).pack(side="left", fill="y")
 
         # main area ---------------------------------------------------------------
