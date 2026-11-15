@@ -190,8 +190,8 @@ class OpenLauncher(tk.Tk):
         stats = ttk.Frame(page)
         stats.pack(fill="x", pady=14)
         self.stat = {}
-        for i, (key, title) in enumerate((("esys", "E-SYS"), ("psdz", "PSDZDATA"), ("defs", "DEFINITIONS"),
-                                          ("db", "DATABASE"))):
+        for i, (key, title) in enumerate((("esys", "E-SYS"), ("psdz", "PSDZDATA"), ("defs", "E-SYS LABELS"),
+                                          ("db", "BACKUP EDITOR"))):
             c = ui.card(stats, padding=(16, 12))
             c.outer.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 7, 0 if i == 3 else 7))
             stats.columnconfigure(i, weight=1, uniform="stat")
@@ -362,7 +362,8 @@ class OpenLauncher(tk.Tk):
         v, d, dl = self.stat[key]
         v.set(value)
         d.set(detail)
-        dl.configure(style={"ok": "StatOk.TLabel", "warn": "StatWarn.TLabel", "bad": "StatBad.TLabel"}[level])
+        dl.configure(style={"ok": "StatOk.TLabel", "warn": "StatWarn.TLabel", "bad": "StatBad.TLabel",
+                            "muted": "CardMuted.TLabel"}[level])
 
     def refresh_status(self):
         P = config.Paths(self.cfg)
@@ -377,11 +378,16 @@ class OpenLauncher(tk.Tk):
                        "ok" if esys_ok else "bad")
         self._set_stat("psdz", "Ready" if psdz_ok else "Not found",
                        (P.psdzdata or "-") if psdz_ok else "Check the psdzdata folder", "ok" if psdz_ok else "bad")
-        self._set_stat("defs", f"{n_defs:,}", f"{self.cfg.get('series', '')}  ·  {n_cache:,} decrypted"
-                       if n_cache else f"{self.cfg.get('series', '')}  ·  built on demand", "ok")
-        has_db = os.path.exists(P.db)
-        self._set_stat("db", "Built" if has_db else "Not built",
-                       "Backup Editor ready" if has_db else "Only needed for the Backup Editor", "ok" if has_db else "warn")
+        # E-Sys labels: definitions are optional (built on demand when E-Sys opens a CAFD), so 0 isn't a problem
+        if n_defs:
+            self._set_stat("defs", f"{n_defs:,} CAFDs", "Others built on demand", "ok")
+        else:
+            self._set_stat("defs", "On demand", "Built as you open CAFDs", "ok")
+        # the definition database is only needed by the BimmerCode Backup Editor (and the command-line tools)
+        if os.path.exists(P.db):
+            self._set_stat("db", "Ready", f"{n_cache:,} CAFD versions" if n_cache else "Database built", "ok")
+        else:
+            self._set_stat("db", "Not built", "Optional: Build definitions", "muted")
         self.esys_info.set(f"E-Sys {ver}\nmain series {self.cfg.get('series', '')}" if esys_ok else "")
         self.launch_sub.set(f"Launch E-Sys {ver} or BimmerCode Backup Editor" if ver
                             else "Launch E-Sys or BimmerCode Backup Editor")
