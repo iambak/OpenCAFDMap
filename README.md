@@ -35,7 +35,7 @@ The same FLM2 NCD (CAFD 00006DF0) in E-Sys's FDL-Editor, first in stock E-Sys, t
 
 It also includes a **BimmerCode Backup Editor**: edit parameters inside BimmerCode iOS backups and write them out as new backups to restore from the phone.
 
-> Open CAFD Map is not affiliated with BMW. The project doesn't ship psdzdata, decrypted CAFDs or a coding database: those are built locally from your own E-Sys/psdzdata and stay in your `workspace\` folder. Contributed files in `definitions\` come from their contributors. Coding a car is at your own risk.
+> Open CAFD Map is not affiliated with BMW. Contributed files in `definitions\` come from their contributors. Coding a car is at your own risk.
 
 ## Requirements
 - Windows with **E-Sys** and its **psdzdata** (the psdzdata folder E-Sys is set up with)
