@@ -1,6 +1,6 @@
 {
- "version": "2026.11.13.5",
- "date": "2026-11-13T23:51:19Z",
+ "version": "2026.11.16.1",
+ "date": "2026-11-16T07:24:19Z",
  "files": {
   "data/contexts/G20_LCI_ECE_320i_11FF.xml": "f621bfff2f28901354255ca0aa8813ae2d19cf7c1374d978c8b16aa5b2cfe5ee",
   "data/contexts/G20_LCI_US_330ixDrive_89FF.xml": "3bd5e3d83ecbd0503f18f3c57680cf1643e38f1bf9341c0bed12877df973592a",
@@ -8,6 +8,11 @@
   "data/contexts/G21_LCI_ECE_318i_11FY.xml": "a3e430b168f5601ef6359b3a1e870eb5437e63782d36e44b631f0148224f8f27",
   "data/ecu_cafd.tsv": "03fb0c2c20cf4e620229fda0701cf1fc6af68cb41d645ce74645a95f3fd5fe41",
   "data/ecu_extra.tsv": "7af3675267854751abd38cff9b63d00af60781e715d239bbb0fd961d63c1c7f4",
+  "data/fa/SOURCES.txt": "d9bdff371ccf657598f58a2d891938e8b591361610ac3b2bd59b1187f08bda1c",
+  "data/fa/codes.tsv.gz": "889ab289a988f61506ba0615f3273be0aad77220e35e566423101d889f1c7314",
+  "data/fa/options.tsv.gz": "d72a6d4db26cdac046e71fd1ad10b2dacd9f3d13efe70ba3b0430bd3445b5cf6",
+  "data/fa/series.tsv.gz": "f952caefaf14c750046480d9b506434d14cd292c6ea61b2db5b6ed6d7a56067e",
+  "data/fa/typekeys.tsv.gz": "846b341c916a634b506c0a23f717abf7b15e6a21f6b454b1c4a3c1cacae31338",
   "data/fp_categories.tsv": "d3bd8085e699a3d29c897a442a4073ec7a178f5147e8f20f85c403e3d6f08156",
   "data/fp_crits_curated.tsv": "553af8bff8ca5241357dd6098de5c19a3cfe1e6709699a4eeb656ff0ec1ca35a",
   "data/fp_crits_typekey.tsv": "7059dd02d49565726cbbdeaf2a293379ea1b86993a4e6983c3d6e46b8db42e24",
