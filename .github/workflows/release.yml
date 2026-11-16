@@ -36,15 +36,25 @@ jobs:
           **Manual install:** extract OpenCAFDMap.zip anywhere and run OpenLauncher.bat.
           Definition updates (names) arrive through OpenLauncher's **Check for updates** without reinstalling.
           EOF
-          # a tag with a suffix (v3.0.0-beta.1) is a preview: a pre-release, never "latest", so setup and
-          # OpenLauncher's normal updates keep installing the stable release
+          assets="dist/OpenCAFDMap.zip dist/OpenCAFDMap.zip.sha256 installer/OpenLauncher-Setup.bat"
           extra=""
           case "$TAG" in
             *-*)
+              # a tag with a suffix (v3.0.0-beta.1) is a preview: a pre-release, never "latest", so setup and
+              # OpenLauncher's normal updates keep installing the stable release. No setup attached: the stable
+              # release's setup installs it (OCM_SETUP_TAG), and a setup here would install the stable release.
+              assets="dist/OpenCAFDMap.zip dist/OpenCAFDMap.zip.sha256"
               extra="--prerelease --latest=false"
-              note="**Preview.** Try it from OpenLauncher (Updates > Try OpenLauncher v3) or run setup with"
-              note="$note OCM_SETUP_TAG=$TAG. Updates > Back to stable returns to the latest stable release."
-              printf '%s\n\n' "$note" | cat - notes.md > notes.tmp && mv notes.tmp notes.md ;;
+              cat > notes.md <<EOF
+          ## Preview - not the stable release
+          **Try it:** in OpenLauncher, **Updates > Try OpenLauncher v3** (needs OpenLauncher 2.3.4 or newer).
+          Your workspace and settings are kept.
+
+          **Go back:** in v3, **Updates > Back to stable** installs the latest stable release.
+
+          **Without OpenLauncher:** download OpenLauncher-Setup.bat from the latest stable release and run it with
+          the environment variable OCM_SETUP_TAG=$TAG set, or extract OpenCAFDMap.zip and run OpenLauncher.bat.
+          EOF
+              ;;
           esac
-          gh release create "$TAG" dist/OpenCAFDMap.zip dist/OpenCAFDMap.zip.sha256 installer/OpenLauncher-Setup.bat \
-            --title "OpenLauncher $TAG" --notes-file notes.md --generate-notes $extra
+          gh release create "$TAG" $assets --title "OpenLauncher $TAG" --notes-file notes.md --generate-notes $extra

@@ -255,7 +255,10 @@ def preview_latest():
 def is_preview():
     """True on the v3 preview: a pre-release install (VERSION like 3.0.0-beta.1) or a clone on the testing branch."""
     if is_git_clone():
-        return _git("rev-parse", "--abbrev-ref", "HEAD", check=False) == PREVIEW_BRANCH
+        try:
+            return _git("rev-parse", "--abbrev-ref", "HEAD", check=False) == PREVIEW_BRANCH
+        except (OSError, subprocess.SubprocessError):          # git not on PATH (launcher_blocker says so)
+            return False
     return "-" in (launcher_installed() or "")
 
 
