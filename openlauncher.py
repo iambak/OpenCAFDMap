@@ -27,6 +27,7 @@ FIELDS = [  # key, label, kind, help
     ("psdzdata_dir", "psdzdata folder", "dir", "empty = the one E-Sys is set up with"),
     ("series", "Main series", "series", "Pick your car's main series, or type another code"),
     ("context", "Reference vehicle", "context", "shortens value labels to what matters for this vehicle class"),
+    ("esys_ui_scale", "E-Sys UI scale", "uiscale", "try 1 if E-Sys's window gets drawn over itself on a scaled display"),
     ("workspace", "Workspace", "dir", "DB, decrypted cache, definitions, logs (never committed)"),
     ("bimmercode_backups_dir", "BimmerCode backups", "dir", "optional: folder with your .cod backups"),
     ("cheat_sheets_dir", "Cheat sheets", "dir", "optional: FDL cheat-sheet XMLs (imported locally only)"),
@@ -368,6 +369,9 @@ class OpenLauncher(tk.Tk):
             elif kind == "series":            # editable: the list, or any other code typed in
                 v.set(series_label(v.get()))
                 w = ttk.Combobox(s, textvariable=v, values=[series_label(c) for c, _ in MAIN_SERIES], height=16)
+            elif kind == "uiscale":           # the choices, or a number typed in
+                v.set(esys.ui_scale_label(v.get()))
+                w = ttk.Combobox(s, textvariable=v, values=[lbl for _, lbl in esys.UI_SCALES])
             else:
                 w = ttk.Entry(s, textvariable=v)
             w.grid(row=r, column=1, sticky="we")
@@ -432,12 +436,14 @@ class OpenLauncher(tk.Tk):
         for key, *_ in FIELDS:
             self.cfg[key] = self.vars[key].get().strip()
         self.cfg["series"] = series_code(self.cfg["series"]) or "G020"
+        self.cfg["esys_ui_scale"] = esys.ui_scale_value(self.cfg["esys_ui_scale"])
         self.cfg["export_all_versions"] = self.all_versions.get()
         self.cfg["try_untested_esys"] = self.try_untested.get()
         config.save(self.cfg)
         self.cfg = config.load()
         self.vars["workspace"].set(self.cfg["workspace"])
         self.vars["series"].set(series_label(self.cfg["series"]))
+        self.vars["esys_ui_scale"].set(esys.ui_scale_label(self.cfg["esys_ui_scale"]))
         self.refresh_status()
         if not quiet:
             self.write("Settings saved to config.json")

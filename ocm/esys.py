@@ -295,6 +295,38 @@ def launch_clean(cfg=None):
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+# OpenLauncher > Settings > E-Sys UI scale: for E-Sys started by OpenLauncher only, overrides E-Sys's own UI.Scale
+# (config\Esys.properties, which isn't changed). "" = E-Sys's own setting. A fixed scale can stop the window from being
+# redrawn in the wrong places when Windows scales the display (125 %, 150 %, ...).
+UI_SCALES = [("", "E-Sys default (its own UI.Scale)"), ("1", "1 - no scaling"), ("1.25", "1.25"), ("1.5", "1.5"),
+             ("2", "2")]
+
+
+def ui_scale_label(value):
+    return dict(UI_SCALES).get((value or "").strip(), (value or "").strip())
+
+
+def ui_scale_value(text):
+    """Settings text -> value for config.json ('' = E-Sys default): a listed label, or a number typed in."""
+    t = (text or "").strip()
+    for v, label in UI_SCALES:
+        if t == label:
+            return v
+    m = re.match(r"^\d+(\.\d+)?$", t.split(" ")[0]) if t else None
+    return m.group(0) if m else ""
+
+
+def vm_options(cfg, spec):
+    """E-Sys's VM options (from its E-Sys.bat), with OpenLauncher's UI-scale override when one is set."""
+    opts = list(spec["vm_options"])
+    scale = ui_scale_value(cfg.get("esys_ui_scale"))
+    if scale:
+        opts = [o for o in opts if not o.startswith("-Dsun.java2d.uiScale=")] + [f"-Dsun.java2d.uiScale={scale}"]
+        if "-Dsun.java2d.uiScale.enabled=true" not in opts:
+            opts.append("-Dsun.java2d.uiScale.enabled=true")
+    return opts
+
+
 def launch_command(cfg, spec=None):
     d = check_esys(cfg)
     check_java(d)
@@ -325,7 +357,7 @@ def launch_command(cfg, spec=None):
     ] + nashorn_options(d)
     if option(cfg, "launch_labels") and option(cfg, "launch_on_demand"):   # CAFDs without a definition get one on demand
         props.append(f"-Docm.runtime={os.path.join(p.workspace, 'runtime_cafd', cfg['series'])}")
-    return [javaw] + spec["vm_options"] + props + [
+    return [javaw] + vm_options(cfg, spec) + props + [
         "-cp", ";".join(spec["classpath"]), f"-splash:{splash_image()}",
         "jdk.nashorn.tools.Shell", os.path.join(config.ESYS_SCRIPTS, "bootstrap.js")]
 
@@ -353,6 +385,8 @@ def launch(cfg=None):
              f"# launch recipe: {spec['source']}; main class {spec['main']}; working folder {spec['cwd']}\n"
              + (f"# options in E-Sys.bat not used: {' '.join(spec['dropped'])}\n" if spec["dropped"] else "")
              + (f"# launch options off: {', '.join(off)}\n" if off else "")
+             + (f"# UI scale set in OpenLauncher: {ui_scale_value(cfg.get('esys_ui_scale'))}\n"
+                if ui_scale_value(cfg.get("esys_ui_scale")) else "")
              + f"# command: {subprocess.list2cmdline(cmd)}\n\n")
     lf.flush()
     try:
