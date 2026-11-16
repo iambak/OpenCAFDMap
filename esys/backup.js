@@ -126,6 +126,9 @@
   });
 
   // ------------------------------------------------------------------ decide + write
+  // E-Sys's own text for "read from the vehicle" (gui.FRM, what DefaultFileHandlingController.openRead shows)
+  var READ_DESC = null;
+  try { READ_DESC = String(Java.type("com.bmw.esys.gui.Messages").getString("gui.FRM")); } catch (eM) {}
   function source(fh) {
     var proxy = getField(fh, C.fh, "currentFile");
     // FileProxy is a non-public inner class: read its fields, its getters aren't callable from here
@@ -249,6 +252,9 @@
         if (!fh || !C.fh.isInstance(fh)) { log("FA/SVT backup: " + kind + " replaced, file handling unknown - not saved"); continue; }
         var src = source(fh);
         if (src.file !== null && src.file.exists()) continue;   // opened from (or saved to) a file: not a vehicle read
+        // E-Sys marks a document without a file as read ("File read, not saved yet."), generated or updated (e.g. an
+        // FA changed by the FA Helper's Apply): only a read comes from the vehicle
+        if (READ_DESC && src.desc && src.desc !== READ_DESC) continue;
         if (!logic.getModel()) continue;                         // closed / cleared
         write(kind, logic);
       } catch (eW) {
