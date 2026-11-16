@@ -6,6 +6,7 @@ rem
 rem Unattended / offline use (optional environment variables):
 rem   OCM_SETUP_DIR=<folder>   install folder (default %LOCALAPPDATA%\OpenCAFDMap)
 rem   OCM_SETUP_ZIP=<file>     install from a downloaded OpenCAFDMap.zip instead of GitHub
+rem   OCM_SETUP_TAG=<tag>      install that release (e.g. a v3 preview, v3.0.0-beta.1) instead of the latest
 rem   OCM_SETUP_QUIET=1        no questions (Python is not installed automatically in quiet mode)
 rem   OCM_SETUP_NO_SHORTCUTS=1 / OCM_SETUP_NO_LAUNCH=1
 setlocal
@@ -85,8 +86,17 @@ try {
         Say "Using $env:OCM_SETUP_ZIP"
         Copy-Item $env:OCM_SETUP_ZIP $zip
     } else {
-        $base = "https://github.com/$Repo/releases/latest/download"
-        Say "Downloading the latest release from github.com/$Repo ..."
+        if ($env:OCM_SETUP_TAG) {
+            # a specific release of this repository only (OpenLauncher's "Try OpenLauncher v3" passes the preview's tag)
+            if ($env:OCM_SETUP_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$') {
+                Fail "OCM_SETUP_TAG '$env:OCM_SETUP_TAG' is not a release tag. Nothing was installed."
+            }
+            $base = "https://github.com/$Repo/releases/download/$env:OCM_SETUP_TAG"
+            Say "Downloading release $env:OCM_SETUP_TAG from github.com/$Repo ..."
+        } else {
+            $base = "https://github.com/$Repo/releases/latest/download"
+            Say "Downloading the latest release from github.com/$Repo ..."
+        }
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest "$base/OpenCAFDMap.zip" -OutFile $zip -UseBasicParsing
         # saved to a file: GitHub serves it as application/octet-stream, which Windows PowerShell 5.1

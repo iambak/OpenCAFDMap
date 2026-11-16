@@ -22,6 +22,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -51,10 +52,16 @@ def source(cfg=None):
 
 
 def vtuple(v):
+    """Comparable version: '2.3.3' < '3.0.0-beta.1' < '3.0.0-beta.2' < '3.0.0' (a pre-release sorts before its
+    release). Anything unreadable sorts first."""
+    core, _, pre = str(v).strip().lstrip("v").partition("-")
     try:
-        return tuple(int(x) for x in str(v).split("."))
+        nums = tuple(int(x) for x in core.split("."))
     except ValueError:
-        return (0,)
+        return (0,), (1,)
+    if not pre:
+        return nums, (1,)
+    return nums, (0,) + tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split("."))
 
 
 def _get(url, limit, timeout=30):
@@ -191,6 +198,13 @@ def update(cfg, out=print):
 SETUP_URL = f"https://github.com/{UPDATE_REPO}/releases/latest/download/OpenLauncher-Setup.bat"
 KEEP = ("workspace", "config.json")             # what setup keeps on an upgrade (must match OpenLauncher-Setup.bat)
 
+# OpenLauncher v3 preview: GitHub pre-releases tagged v3.* (release installs) and the testing branch (git clones).
+# Fixed in code like UPDATE_REPO. Pre-releases are never "latest", so stable installs only get one when the user
+# picks "Try OpenLauncher v3"; "Back to stable" installs the latest stable release (or switches back to main).
+PREVIEW_TAG_PREFIX = "v3."
+PREVIEW_BRANCH = "testing"
+TAG_RE = re.compile(r"^v\d+\.\d+\.\d+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$")   # the only tags setup is given
+
 
 def launcher_installed():
     """'2.3.0' for a release install (VERSION file), None for a source checkout."""
@@ -225,44 +239,78 @@ def launcher_latest():
     return str(tag).lstrip("v")
 
 
+def preview_latest():
+    """Newest v3 preview (GitHub pre-release, tag v3.*) as '3.0.0-beta.1', or None if there is none."""
+    raw = _get(f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30", 4 * 1024 * 1024)
+    try:
+        rels = json.loads(raw)
+        tags = [str(r["tag_name"]) for r in rels
+                if r.get("prerelease") and not r.get("draft") and str(r["tag_name"]).startswith(PREVIEW_TAG_PREFIX)]
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        raise UpdateError("GitHub's release list was not understood") from e
+    tags = [t for t in tags if TAG_RE.match(t)]
+    return max(tags, key=vtuple).lstrip("v") if tags else None
+
+
+def is_preview():
+    """True on the v3 preview: a pre-release install (VERSION like 3.0.0-beta.1) or a clone on the testing branch."""
+    if is_git_clone():
+        return _git("rev-parse", "--abbrev-ref", "HEAD", check=False) == PREVIEW_BRANCH
+    return "-" in (launcher_installed() or "")
+
+
 def launcher_check():
-    """(installed version, latest release version, update available?)"""
+    """(installed version, newest version for this install, update available?). A preview install follows the
+    newest preview, or a newer stable release once there is one."""
     cur, new = launcher_installed(), launcher_latest()
+    if is_preview():
+        pre = preview_latest()
+        if pre and vtuple(pre) > vtuple(new):
+            new = pre
     return cur, new, cur is not None and vtuple(new) > vtuple(cur)
 
 
-def launcher_update(cfg=None, out=print):
-    """Download the latest release's setup script and start it for this install folder, in its own console.
-    The caller must exit right after: setup replaces the program files (workspace\\ and config.json are
-    kept) and then starts OpenLauncher again."""
+def launcher_update(cfg=None, out=print, version=None):
+    """Download the latest stable release's setup script and start it for this install folder, in its own console.
+    version: a pre-release ('3.0.0-beta.1') to install instead of the latest stable release (setup gets it as
+    OCM_SETUP_TAG). The caller must exit right after: setup replaces the program files (workspace\\ and
+    config.json are kept) and then starts OpenLauncher again."""
     why = launcher_blocker(cfg)
     if why:
         raise UpdateError(why)
+    tag = f"v{version.lstrip('v')}" if version and "-" in version else None   # a stable version = latest stable
+    if tag and not TAG_RE.match(tag):
+        raise UpdateError(f"not a release tag: {tag}")
     data = _get(SETUP_URL, 1024 * 1024, timeout=60)
     text = data.decode("utf-8", "replace")
     if not text.lstrip().lower().startswith("@echo off") or "#PS-START" not in text or f"'{UPDATE_REPO}'" not in text:
         raise UpdateError("the downloaded setup script doesn't look like OpenLauncher-Setup.bat; nothing was changed")
+    if tag and "OCM_SETUP_TAG" not in text:
+        raise UpdateError("the current setup script can't install a preview yet; nothing was changed")
     tmp = os.path.join(os.environ.get("TEMP") or config.ROOT, "OpenLauncher-update")
     os.makedirs(tmp, exist_ok=True)
     bat = os.path.join(tmp, "OpenLauncher-Setup.bat")
     with open(bat, "wb") as f:
         f.write(data)
     env = dict(os.environ, OCM_SETUP_DIR=config.ROOT, OCM_SETUP_QUIET="1", OCM_SETUP_NO_SHORTCUTS="1")
-    env.pop("OCM_SETUP_ZIP", None)
-    env.pop("OCM_SETUP_NO_LAUNCH", None)
+    for k in ("OCM_SETUP_ZIP", "OCM_SETUP_NO_LAUNCH", "OCM_SETUP_TAG"):
+        env.pop(k, None)
+    if tag:
+        env["OCM_SETUP_TAG"] = tag
     # wait ~2 s for OpenLauncher to close, run setup; keep the window open only if it failed
     # (a string, not a list: cmd /s /c strips only the outer quotes, Python's list quoting would break it)
     cmd = f'cmd /s /c "ping -n 3 127.0.0.1 >nul & call "{bat}" || pause"'
     subprocess.Popen(cmd, env=env, cwd=tmp, creationflags=subprocess.CREATE_NEW_CONSOLE)
-    out(f"Updating OpenLauncher in {config.ROOT}; it restarts when setup is done.")
+    out(f"Installing OpenLauncher {tag or 'latest release'} in {config.ROOT}; it restarts when setup is done.")
 
 
 # ------------------------------------------------------------------ git clone updates
-# A clone follows its origin's main branch. "Update" is a fast-forward pull (never loses anything).
-# "Force update" also works when that's impossible (local edits or commits): it first saves everything,
-# uncommitted changes to a git stash, local commits to a backup branch, then moves main to origin/main.
-# workspace\ and config.json are git-ignored, so git never touches them.
+# A clone follows its origin's main branch, or the testing branch while it runs the v3 preview. "Update" is a
+# fast-forward pull (never loses anything). "Force update" also works when that's impossible (local edits or
+# commits): it first saves everything, uncommitted changes to a git stash, local commits to a backup branch, then
+# moves the branch to its origin. workspace\ and config.json are git-ignored, so git never touches them.
 GIT_BRANCH = "main"
+GIT_BRANCHES = (GIT_BRANCH, PREVIEW_BRANCH)     # the only branches OpenLauncher follows or switches to
 
 
 def _git(*args, check=True, timeout=120):
@@ -273,46 +321,70 @@ def _git(*args, check=True, timeout=120):
     return r.stdout.strip()
 
 
-def git_state(fetch=True):
-    """{branch, head, behind, ahead, dirty} relative to origin/main (fetches first)."""
+def git_target():
+    """The branch this clone follows: the one it's on if that's main or testing, otherwise main."""
+    b = _git("rev-parse", "--abbrev-ref", "HEAD", check=False)
+    return b if b in GIT_BRANCHES else GIT_BRANCH
+
+
+def _git_fetch(branch):
+    # explicit refspec: also creates origin/<branch> in a single-branch clone
+    _git("fetch", "--quiet", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}", timeout=180)
+
+
+def git_state(fetch=True, target=None):
+    """{branch, target, head, latest, behind, ahead, dirty} relative to origin/<target> (fetches first)."""
+    target = target or git_target()
     if fetch:
-        _git("fetch", "--quiet", "origin", GIT_BRANCH, timeout=180)
-    up = f"origin/{GIT_BRANCH}"
+        _git_fetch(target)
+    up = f"origin/{target}"
     dirty = [l for l in _git("status", "--porcelain", "--untracked-files=no").splitlines() if l.strip()]
-    return {"branch": _git("rev-parse", "--abbrev-ref", "HEAD"), "head": _git("rev-parse", "--short", "HEAD"),
-            "latest": _git("rev-parse", "--short", up),
+    return {"branch": _git("rev-parse", "--abbrev-ref", "HEAD"), "target": target,
+            "head": _git("rev-parse", "--short", "HEAD"), "latest": _git("rev-parse", "--short", up),
             "behind": int(_git("rev-list", "--count", f"HEAD..{up}") or 0),
             "ahead": int(_git("rev-list", "--count", f"{up}..HEAD") or 0), "dirty": len(dirty)}
 
 
-def git_update(force=False, out=print):
-    """Update the clone to origin/main. Returns True if anything changed."""
-    s = git_state()
+def git_update(force=False, out=print, target=None):
+    """Update the clone to origin/<target> (default: the branch it follows; main or testing to switch).
+    Returns True if anything changed."""
+    if target is not None and target not in GIT_BRANCHES:
+        raise UpdateError(f"OpenLauncher only follows {' or '.join(GIT_BRANCHES)}, not {target}")
+    s = git_state(target=target)
+    t = s["target"]
     if not force:
-        if s["branch"] != GIT_BRANCH:
-            raise UpdateError(f"the clone is on branch '{s['branch']}', not {GIT_BRANCH}: use Force update, "
+        if s["branch"] != t:
+            raise UpdateError(f"the clone is on branch '{s['branch']}', not {t}: use Force update, "
                               "or switch branches in git")
         if s["behind"] == 0:
             out(f"Launcher is up to date ({s['head']}).")
             return False
-        out(_git("pull", "--ff-only", "origin", GIT_BRANCH, timeout=300) or "git pull done")
+        out(_git("pull", "--ff-only", "origin", t, timeout=300) or "git pull done")
         return True
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     if s["dirty"] or _git("status", "--porcelain"):
         _git("stash", "push", "--include-untracked", "-m", f"OpenLauncher force update {stamp}")
         out(f"Your uncommitted changes were saved: git stash list (\"OpenLauncher force update {stamp}\")")
     saved = set()
-    for ref, label in (("HEAD", s["branch"]), (GIT_BRANCH, GIT_BRANCH)):
+    for ref, label in (("HEAD", s["branch"]), (t, t)):
         sha = _git("rev-parse", "--verify", "--quiet", ref, check=False)
-        if not sha or sha in saved or not int(_git("rev-list", "--count", f"origin/{GIT_BRANCH}..{sha}") or 0):
-            continue                                   # missing, already saved, or nothing local on it
+        if not sha or sha in saved or not int(_git("rev-list", "--count", sha, "--not", "--remotes=origin",
+                                                   "--branches=openlauncher-backup-*") or 0):
+            continue                                   # missing, already saved, or nothing only-local / unsaved on it
         saved.add(sha)
         name = f"openlauncher-backup-{stamp}" + ("" if not saved - {sha} else f"-{label}")
         _git("branch", name, sha)
         out(f"Your local commits on {label} were saved to branch {name}")
-    _git("checkout", "-B", GIT_BRANCH, f"origin/{GIT_BRANCH}")
-    out(f"Launcher moved to origin/{GIT_BRANCH} ({_git('rev-parse', '--short', 'HEAD')})")
+    _git("checkout", "-B", t, f"origin/{t}")
+    _git("branch", f"--set-upstream-to=origin/{t}", t, check=False)     # so plain git pull follows it too
+    out(f"Launcher moved to origin/{t} ({_git('rev-parse', '--short', 'HEAD')})")
     return True
+
+
+def git_switch(target, out=print):
+    """Switch the clone to main or testing (v3 preview) the safe way: Force update's path, so uncommitted changes
+    go to a git stash and local commits to a backup branch first."""
+    return git_update(force=True, out=out, target=target)
 
 
 def main():

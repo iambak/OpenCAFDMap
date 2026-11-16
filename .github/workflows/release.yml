@@ -36,5 +36,15 @@ jobs:
           **Manual install:** extract OpenCAFDMap.zip anywhere and run OpenLauncher.bat.
           Definition updates (names) arrive through OpenLauncher's **Check for updates** without reinstalling.
           EOF
+          # a tag with a suffix (v3.0.0-beta.1) is a preview: a pre-release, never "latest", so setup and
+          # OpenLauncher's normal updates keep installing the stable release
+          extra=""
+          case "$TAG" in
+            *-*)
+              extra="--prerelease --latest=false"
+              note="**Preview.** Try it from OpenLauncher (Updates > Try OpenLauncher v3) or run setup with"
+              note="$note OCM_SETUP_TAG=$TAG. Updates > Back to stable returns to the latest stable release."
+              printf '%s\n\n' "$note" | cat - notes.md > notes.tmp && mv notes.tmp notes.md ;;
+          esac
           gh release create "$TAG" dist/OpenCAFDMap.zip dist/OpenCAFDMap.zip.sha256 installer/OpenLauncher-Setup.bat \
-            --title "OpenLauncher $TAG" --notes-file notes.md --generate-notes
+            --title "OpenLauncher $TAG" --notes-file notes.md --generate-notes $extra
