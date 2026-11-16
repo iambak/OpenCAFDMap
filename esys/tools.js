@@ -2,6 +2,8 @@
 // Loaded by agent.js (only in an E-Sys started by OpenLauncher). Read-only: nothing here writes coding data or NCDs.
 //
 //   Compare NCD   two NCD files side by side, with BMW / community names; differences in red; Save diff (TSV)
+//   Cheat Sheet   E-Sys's FDL Editor with cheat sheets (esys/cheatsheet.js)
+//   FA Helper     vehicle order editor checked against data\fa\ and E-Sys's PsdZ (esys/fahelper.js)
 //
 // How it attaches: E-Sys's left bar is an OutlookBarPanel (public addBar). A tool's view is shown the way E-Sys shows a
 // module: AbstractView.replace(currentView, ourView) and EsysFrame.currentView = ourView, so clicking any E-Sys section
@@ -482,6 +484,39 @@
     log("Cheat Sheet window not loaded: " + eC);
   }
 
+  // FA / VO Helper (esys/fahelper.js): vehicle order editor checked against data\fa\ and E-Sys's PsdZ.
+  var faHelper = null;
+  try {
+    var dataDir = api.tools ? new File(new File(api.tools).getParentFile(), "data") : null;
+    if (dataDir && new File(dataDir, "fa").isDirectory()) {
+      faHelper = load(new File(new File(String(System.getProperty("ocm.agent"))).getParentFile(), "fahelper.js").getPath())({
+        log: log, cls: cls, dataDir: dataDir,
+        esysDataDir: System.getProperty("ocm.datadir") ? String(System.getProperty("ocm.datadir")) : null
+      });
+    } else {
+      log("FA Helper not added: no data\\fa\\ tables (Check for updates in OpenLauncher)");
+    }
+  } catch (eF) {
+    log("FA Helper not loaded: " + eF);
+  }
+
+  function faIcon(size) {
+    var img = new Awt.image.BufferedImage(size, size, Awt.image.BufferedImage.TYPE_INT_ARGB);
+    var g = img.createGraphics();
+    g.setRenderingHint(Awt.RenderingHints.KEY_ANTIALIASING, Awt.RenderingHints.VALUE_ANTIALIAS_ON);
+    var s = size / 32;
+    g.setColor(new Awt.Color(0xF4, 0xF4, 0xF6)); g.fillRoundRect(5 * s, 3 * s, 22 * s, 26 * s, 3 * s, 3 * s);
+    g.setColor(new Awt.Color(0x50, 0x50, 0x58)); g.setStroke(new Awt.BasicStroke(1.2 * s)); g.drawRoundRect(5 * s, 3 * s, 22 * s, 26 * s, 3 * s, 3 * s);
+    for (var i = 0; i < 4; i++) {
+      var y = (8 + i * 5.5) * s;
+      g.setColor(i === 2 ? new Awt.Color(0xB4, 0x23, 0x18) : new Awt.Color(0x0B, 0x7A, 0x3E));
+      g.fillRect(8 * s, y, 3.5 * s, 3.5 * s);
+      g.setColor(new Awt.Color(0x70, 0x70, 0x78)); g.fillRect(13.5 * s, y + 1 * s, 10.5 * s, 1.6 * s);
+    }
+    g.dispose();
+    return new Sw.ImageIcon(img);
+  }
+
   function toolButton(text, icon, tip, action) {
     var b = new Sw.JButton(text, icon);
     b.setVerticalTextPosition(Sw.SwingConstants.BOTTOM);
@@ -509,6 +544,11 @@
       p.add(toolButton("Cheat Sheet", sheetIcon(32), "FDL Editor with community cheat sheets, checked against the open CAFD",
                        function () { try { cheat.open(); } catch (e) { log("Cheat Sheet failed: " + e); } }));
     }
+    if (faHelper) {
+      p.add(Sw.Box.createVerticalStrut(10));
+      p.add(toolButton("FA Helper", faIcon(32), "Vehicle order (FA / VO) editor: options checked against the type key, " +
+                       "conflicts and the CAFDs your psdzdata has", function () { openTool("fahelper", faHelper.build); }));
+    }
     p.add(Sw.Box.createVerticalGlue());
     return p;
   }
@@ -528,7 +568,7 @@
         outlook = ob;
         ob.addBar(BAR_NAME, sectionPanel(darkMode() ? new Awt.Color(0x3C, 0x3F, 0x41) : new Awt.Color(0xA0, 0xA0, 0xA3)));
         installed = true;
-        log("OpenLauncher section added to E-Sys (Compare NCD" + (cheat ? ", Cheat Sheet" : "") + ")");
+        log("OpenLauncher section added to E-Sys (Compare NCD" + (cheat ? ", Cheat Sheet" : "") + (faHelper ? ", FA Helper" : "") + ")");
       } catch (e) {
         gaveUp = true;
         log("OpenLauncher section could not be added: " + e);

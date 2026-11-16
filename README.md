@@ -137,6 +137,16 @@ E-Sys started by OpenLauncher has an **OpenLauncher** section at the bottom of i
 - **Go to** selects the function in the FDL tree.
 - **Apply** sets the entry's values in the FDL editor through E-Sys's own edit path. A preset value is picked from the value list; a custom value is entered in the raw value field (`Werte=`), and E-Sys's parsed result is checked byte for byte. Only the NCD open in the editor changes, and E-Sys marks it as modified. Saving and coding stay with you, as usual. Steps that don't fit are skipped and listed.
 
+**FA Helper.** A vehicle order (FA / VO) editor: options (SALAPA), HO-words and E-words as tick lists with their titles, checked as you edit.
+- **Read from E-Sys** takes the FA open in Coding or the FA editor; **Open FA file...** loads one from disk. Your edits stay in the helper until you apply them.
+- **Checked live:**
+  - the type key and its build date;
+  - each option against what's offered for that type key and when (standard / optional, with production windows);
+  - two options from one class (for example 2TE and 2TB, two transmissions) are flagged as a conflict.
+- **Check CAFDs (PsdZ)** calculates the target SVT for the edited FA at the chosen I-step and lists every CAFD your psdzdata doesn't have, with the option that brought it in.
+- **Apply to E-Sys FA** hands the edited FA to E-Sys's FA editor, which marks it "updated, not saved". Saving it and writing it to the car stay in E-Sys, as usual. **Save FA as...** writes it to a file instead.
+- **Data:** everything it needs ships with Open CAFD Map in `data\fa\` (8,456 type keys, built from ISTA and KIS) and updates through **Check for updates**, so it doesn't depend on how old your psdzdata is. The CAFD check uses your own psdzdata through E-Sys's PsdZ.
+
 **FA / SVT auto-backup.** Every FA and SVT that E-Sys reads from the vehicle is saved as a copy in E-Sys's data folder (`Path.Home`, for example `H:\Data`), with no button to press:
 - **FA:** `FA\FABak\<series>_<last 7 of VIN>.xml`; **SVT:** `SVT\SVTBak\<series>_<last 7 of VIN>.xml`. The files are E-Sys's own FA / SVT XML, so **Load** opens them like any other.
 - **Covered:** Vehicle Order **Read** and SVT Actual **Read (VCM)** / **Read (ECU)** in Coding, and the FA and SVT editors. Files you **Load** aren't copied, and neither is the calculated SVT target.
