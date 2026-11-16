@@ -2,6 +2,9 @@
 
 Readable coding names in E-Sys again, built from your own psdzdata and a shared, community-maintained list of names.
 
+> **Documentation:** [shamair28.github.io/OpenCAFDMap-docs](https://shamair28.github.io/OpenCAFDMap-docs/)
+> This README is an overview. See the docs site for more detailed documentation: setup, every OpenLauncher feature, the tools inside E-Sys, the BimmerCode Backup Editor, updating and contributing.
+
 Current psdzdata ships CAFDs with every FDL name trimmed to `.`. E-Sys then shows a tree of dots. Open CAFD Map rebuilds what it can on your own machine:
 
 - **Value labels from BMW's own coding rules.** Every value still carries the rule that selects it, and it's turned into readable text. For example `wert_02 [SA5AC]` means "value 2, coded when option 5AC is fitted". `[n/a here]` means the rule never applies to your reference vehicle class.
