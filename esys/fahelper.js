@@ -444,6 +444,11 @@
       if (showAll) {
         var list = st.series && d.series[st.series] ? d.series[st.series][kind === "sa" ? "SA" : kind === "ho" ? "HO" : "E"] || [] : [];
         list.forEach(function (c) { add(c, kind === "sa" && opts ? "not listed for " + st.tk : "", kind === "sa" && !!opts); });
+        if (kind === "sa")   // every option code in the tables (the FA->FP mapping only lists options the FP uses)
+          Object.keys(d.codes).forEach(function (c) {
+            var k = d.codes[c].kind;
+            if (c.length === 3 && (!k || k.indexOf("SA") >= 0)) add(c, opts ? "not listed for " + st.tk : "", !!opts);
+          });
       }
       out.sort(function (a, b) {
         var sa = st[kind][a.code] ? 0 : 1, sb = st[kind][b.code] ? 0 : 1;
@@ -564,7 +569,8 @@
     bRevert.addActionListener(function () {
       if (!S.base) return;
       S.st = JSON.parse(JSON.stringify(S.base));
-      loading = true; dateField.setText(S.st.tc); tkBox.setSelectedItem(S.st.tk); loading = false;
+      var tb = tables().types[S.st.tk];
+      loading = true; dateField.setText(S.st.tc); tkBox.setSelectedItem(S.st.tk + (tb ? "  " + describe(tb) : "")); loading = false;
       psdzHtml = ""; bApply.setEnabled(false); recheck(); status.setText("Back to the FA as read.");
     });
 

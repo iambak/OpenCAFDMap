@@ -138,6 +138,9 @@ E-Sys started by OpenLauncher has an **OpenLauncher** section at the bottom of i
 - **Apply** sets the entry's values in the FDL editor through E-Sys's own edit path. A preset value is picked from the value list; a custom value is entered in the raw value field (`Werte=`), and E-Sys's parsed result is checked byte for byte. Only the NCD open in the editor changes, and E-Sys marks it as modified. Saving and coding stay with you, as usual. Steps that don't fit are skipped and listed.
 
 **FA Helper.** A vehicle order (FA / VO) editor: options (SALAPA), HO-words and E-words as tick lists with their titles, checked as you edit.
+
+![FA Helper in E-Sys: a G20 FA with two conflicts flagged in red (two sound systems, two transmissions) and Check CAFDs listing the CAFDs this psdzdata doesn't have](docs/images/fa_helper.png)
+
 - **Read from E-Sys** takes the FA open in Coding or the FA editor; **Open FA file...** loads one from disk. Your edits stay in the helper until you apply them.
 - **Checked live:**
   - the type key and its build date;
