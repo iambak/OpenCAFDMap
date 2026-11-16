@@ -259,9 +259,17 @@ class OpenLauncher(tk.Tk):
         if updater.is_git_clone():
             self.btn_force.pack(side="left", padx=(6, 0))
         self.launcher_state = "check"
+        self.launcher_new = None
         self.launcher_label = tk.StringVar()
         ttk.Label(u, textvariable=self.launcher_label, style="CardMuted.TLabel", wraplength=380,
                   justify="left").pack(anchor="w", pady=(6, 0))
+        # v3 preview (pre-release install or testing-branch clone): the way back to the stable v2 launcher
+        sr = ttk.Frame(u, style="Card.TFrame")
+        self.btn_stable = ttk.Button(sr, text="Back to stable", style="Ghost.TButton", command=self.back_to_stable)
+        self.btn_stable.pack(side="left")
+        ttk.Label(sr, text="You're on the v3 preview", style="CardMuted.TLabel").pack(side="left", padx=10)
+        if updater.is_preview():
+            sr.pack(anchor="w", pady=(8, 0))
         self.set_launcher_state("check")
 
         # folders + latest activity -----------------------------------------------
@@ -537,16 +545,19 @@ class OpenLauncher(tk.Tk):
         if why:
             state = "blocked"
         self.launcher_state = state
+        if state == "available":
+            self.launcher_new = available       # what "Update launcher" installs (a preview needs its tag)
         self.btn_launcher.configure(text={"check": "Check for launcher update", "available": "Update launcher",
                                           "current": "Launcher up to date", "busy": "Working...",
                                           "blocked": "Launcher updates off"}[state])
         self.btn_launcher.state(["disabled"] if state in ("busy", "blocked") else ["!disabled"])
         self.btn_force.state(["disabled"] if state in ("busy", "blocked") else ["!disabled"])
+        self.btn_stable.state(["disabled"] if state in ("busy", "blocked") else ["!disabled"])
         if updater.is_git_clone():
             g = git or {}
             text = "Installed launcher: git clone" + (f", {g['branch']} @ {g['head']}" if g else "")
             if g:
-                text += f"     origin/main @ {g['latest']}" + (f" ({g['behind']} new commit(s))" if g["behind"] else "")
+                text += f"     origin/{g['target']} @ {g['latest']}" + (f" ({g['behind']} new commit(s))" if g["behind"] else "")
                 local = [f"{g['dirty']} edited file(s)"] * bool(g["dirty"]) + [f"{g['ahead']} local commit(s)"] * bool(g["ahead"])
                 if local:
                     text += f"     local: {', '.join(local)}"
@@ -574,13 +585,14 @@ class OpenLauncher(tk.Tk):
                     avail = g["behind"] > 0
                     self.q.put(lambda: self.set_launcher_state("available" if avail else "current", git=g))
                     if not silent or avail:
-                        self.q.put(f"Launcher (git clone): {g['branch']} @ {g['head']}, origin/main @ {g['latest']}"
+                        self.q.put(f"Launcher (git clone): {g['branch']} @ {g['head']}, "
+                                   f"origin/{g['target']} @ {g['latest']}"
                                    + (f" - {g['behind']} new commit(s) (Updates > Update launcher)" if avail else ""))
                     return
                 cur, new, avail = updater.launcher_check()
                 self.q.put(lambda: self.set_launcher_state("available" if avail else "current", new))
                 if not silent or avail:
-                    self.q.put(f"Launcher: installed v{cur}, latest release v{new}"
+                    self.q.put(f"Launcher: installed v{cur}, newest v{new}"
                                + (" - update available (Updates > Update launcher)" if avail else ""))
             except (updater.UpdateError, OSError, subprocess.SubprocessError) as e:
                 self.q.put(lambda: self.set_launcher_state("check"))
@@ -598,14 +610,15 @@ class OpenLauncher(tk.Tk):
             return False
         return True
 
-    def _git_update(self, force):
-        """Pull (or force-move) the clone in the background, then restart OpenLauncher on the new code."""
+    def _git_update(self, force, target=None):
+        """Pull (or force-move, or switch to target) the clone in the background, then restart OpenLauncher on the
+        new code."""
         self.busy = True
         self.set_launcher_state("busy")
 
         def work():
             try:
-                if updater.git_update(force, self.q.put):
+                if updater.git_update(force, self.q.put, target=target):
                     self.q.put("Restarting OpenLauncher on the updated code...")
                     self.q.put(self.restart)
                     return
@@ -626,7 +639,7 @@ class OpenLauncher(tk.Tk):
         if not self._launcher_update_allowed("Force update"):
             return
         if not messagebox.askyesno(
-                "Force update", f"This moves the git clone in\n{ROOT}\nto origin/main, even if you changed files "
+                "Force update", f"This moves the git clone in\n{ROOT}\nto origin/{updater.git_target()}, even if you changed files "
                                 "or made commits. Nothing is lost:\n\n"
                                 "  - uncommitted changes are saved to a git stash (git stash list)\n"
                                 "  - local commits are saved to a branch named openlauncher-backup-<time>\n\n"
@@ -640,23 +653,45 @@ class OpenLauncher(tk.Tk):
         if updater.is_git_clone():
             self._git_update(force=False)
             return
+        new = self.launcher_new
+        self._install_release("Update launcher", f"OpenLauncher v{new}" if new else "the latest release",
+                              "Update now?", version=new)
+
+    def _install_release(self, title, what, question, version=None, extra=""):
+        """Confirm, back up edited shared files, then run setup for this folder (latest release, or version)."""
         changed = updater.local_changes()
         note = (f"\n\nYou changed or added {len(changed)} file(s) in names/definitions/data (e.g. {changed[0]}); "
                 "setup replaces those folders, so they are backed up to workspace\\backups first." if changed else "")
         if not messagebox.askyesno(
-                "Update launcher", f"OpenLauncher closes and the latest release is installed into\n{ROOT}\n"
-                                   "Your workspace and settings are kept. OpenLauncher starts again when it's done."
-                                   + note + "\n\nUpdate now?"):
+                title, f"OpenLauncher closes and {what} is installed into\n{ROOT}\n"
+                       "Your workspace and settings are kept. OpenLauncher starts again when it's done."
+                       + extra + note + "\n\n" + question):
             return
         try:
             if changed:
                 bdir = updater.backup_local_changes(changed, "launcher-update")
                 self.write(f"Backed up {len(changed)} edited file(s) to {bdir}")
-            updater.launcher_update(self.cfg, self.write)
+            updater.launcher_update(self.cfg, self.write, version=version)
         except (updater.UpdateError, OSError) as e:
-            messagebox.showerror("Update launcher", str(e))
+            messagebox.showerror(title, str(e))
             return
         self.after(300, self.destroy)
+
+    def back_to_stable(self):
+        """Updates > Back to stable (v3 preview only): the latest stable release, or the main branch in a clone."""
+        title = "Back to stable"
+        if not self._launcher_update_allowed(title):
+            return
+        if updater.is_git_clone():
+            if messagebox.askyesno(
+                    title, f"This switches the git clone in\n{ROOT}\nback to the {updater.GIT_BRANCH} branch (stable "
+                           "launcher) and restarts OpenLauncher. Uncommitted changes are saved to a git stash and local "
+                           "commits to a backup branch first. Your workspace and config.json are not touched."
+                           "\n\nSwitch now?"):
+                self._git_update(force=True, target=updater.GIT_BRANCH)
+            return
+        self._install_release(title, "the latest stable release", "Go back to stable now?",
+                              extra="\n\nYou can try the v3 preview again from Updates > Try OpenLauncher v3.")
 
     # ---------------------------------------------------------------- actions
     def _lock(self, busy):
