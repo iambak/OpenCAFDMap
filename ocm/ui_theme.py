@@ -103,8 +103,6 @@ def apply(root):
                               ("Stat.TLabel", C["card"], C["text"], f["stat"]),
                               ("StatOk.TLabel", C["card"], C["ok"], f["small"]),
                               ("StatWarn.TLabel", C["card"], C["warn"], f["small"]),
-                              ("StatWarnCard.TLabel", C["card"], "#c9a46a", f["small"]),
-                              ("CardLink.TLabel", C["card"], C["muted"], f["bold"]),
                               ("StatBad.TLabel", C["card"], C["bad"], f["small"])):
         st.configure(name, background=bg, foreground=fg, font=fnt)
     # buttons
@@ -112,12 +110,10 @@ def apply(root):
                  padding=(12, 6), relief="flat")
     st.map("TButton", background=[("disabled", C["card"]), ("pressed", C["border"]), ("active", "#2e2e35")],
            foreground=[("disabled", C["faint"])])
-    st.configure("Accent.TButton", background=C["accent"], foreground="#ffffff", font=f["bold"], padding=(16, 8))
-    st.map("Accent.TButton", background=[("disabled", C["accent_lo"]), ("pressed", C["accent_lo"]),
-                                         ("active", C["accent_hi"])], foreground=[("disabled", "#d8b4b7")])
-    st.configure("Hero.TButton", background=C["accent"], foreground="#ffffff", font=f["big"], padding=(26, 14))
-    st.map("Hero.TButton", background=[("disabled", C["accent_lo"]), ("pressed", C["accent_lo"]),
-                                       ("active", C["accent_hi"])], foreground=[("disabled", "#d8b4b7")])
+    for name, fnt, pad in (("Accent.TButton", f["bold"], (16, 8)), ("Hero.TButton", f["big"], (26, 14))):
+        st.configure(name, background=C["accent"], foreground="#ffffff", font=fnt, padding=pad)
+        st.map(name, background=[("disabled", C["accent_lo"]), ("pressed", C["accent_lo"]),
+                                 ("active", C["accent_hi"])], foreground=[("disabled", "#d8b4b7")])
     st.configure("Ghost.TButton", background=C["card"], foreground=C["muted"], padding=(10, 5))
     st.map("Ghost.TButton", background=[("active", C["card2"]), ("pressed", C["border"])],
            foreground=[("active", C["text"]), ("disabled", C["faint"])])
@@ -153,11 +149,8 @@ def apply(root):
                 ("Checkbutton.label", {"sticky": "nswe"})]})]})])
     except tk.TclError:
         pass                                   # element already defined (second window): keep the default look
-    st.configure("Card.TCheckbutton", background=C["card"], foreground=C["text"], indicatorbackground=C["card2"],
-                 indicatorforeground=C["accent"], focusthickness=0)
-    st.map("Card.TCheckbutton", background=[("active", C["card"])], foreground=[("disabled", C["faint"])],
-           indicatorbackground=[("selected", C["accent"]), ("active", C["card2"])],
-           indicatorforeground=[("selected", "#ffffff")])
+    st.configure("Card.TCheckbutton", background=C["card"], foreground=C["text"], focusthickness=0)
+    st.map("Card.TCheckbutton", background=[("active", C["card"])], foreground=[("disabled", C["faint"])])
     # scrollbars + progress
     for o in ("Vertical", "Horizontal"):
         st.configure(f"{o}.TScrollbar", background=C["card2"], troughcolor=C["log"], bordercolor=C["log"],

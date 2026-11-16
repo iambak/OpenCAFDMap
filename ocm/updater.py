@@ -194,10 +194,7 @@ KEEP = ("workspace", "config.json")             # what setup keeps on an upgrade
 
 def launcher_installed():
     """'2.3.0' for a release install (VERSION file), None for a source checkout."""
-    try:
-        return open(os.path.join(config.ROOT, "VERSION"), encoding="utf-8").read().strip().lstrip("v")
-    except OSError:
-        return None
+    return config.app_version() or None
 
 
 def is_git_clone():

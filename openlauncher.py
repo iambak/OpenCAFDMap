@@ -76,24 +76,19 @@ def series_code(text):
     return (text or "").strip().split(" ")[0].upper()
 
 
-def app_version():
-    """'v1.0.0' for a release install (VERSION is added by installer/build_release.py), '' otherwise."""
-    try:
-        return "v" + open(os.path.join(ROOT, "VERSION"), encoding="utf-8").read().strip()
-    except OSError:
-        return ""
-
-
-def pythonw():
-    exe = sys.executable
-    w = os.path.join(os.path.dirname(exe), "pythonw.exe")
-    return w if os.path.exists(w) else exe
+PAGES = {  # key: (nav button, title, subtitle)
+    "home": ("⌂   Home", "Home", "Start E-Sys, build definitions, stay up to date"),
+    "settings": ("⚙   Settings", "Settings", "Paths and options, saved to config.json"),
+    "activity": ("≡   Activity", "Activity", "Everything OpenLauncher did this session"),
+}
+VERSION = "v" + config.app_version() if config.app_version() else ""   # '' for a source checkout
+pythonw = esys.pythonw
 
 
 class OpenLauncher(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(f"OpenLauncher {app_version()} - Open CAFD Map".replace("  ", " "))
+        self.title(f"OpenLauncher {VERSION} - Open CAFD Map".replace("  ", " "))
         appicon.apply(self)
         self.geometry("1120x780")
         self.minsize(980, 680)
@@ -128,9 +123,9 @@ class OpenLauncher(tk.Tk):
         bt = ttk.Frame(brand, style="Side.TFrame")
         bt.pack(side="left")
         ttk.Label(bt, text="OpenLauncher", style="Side.TLabel").pack(anchor="w")
-        ttk.Label(bt, text=(app_version() or "source checkout"), style="SideMuted.TLabel").pack(anchor="w")
+        ttk.Label(bt, text=(VERSION or "source checkout"), style="SideMuted.TLabel").pack(anchor="w")
         self.nav = {}
-        for key, text in (("home", "⌂   Home"), ("settings", "⚙   Settings"), ("activity", "≡   Activity")):
+        for key, (text, _, _) in PAGES.items():
             b = ttk.Button(side, text=text, style="Nav.TButton", command=lambda k=key: self.show_page(k))
             b.pack(fill="x", padx=10, pady=1)
             self.nav[key] = b
@@ -172,7 +167,7 @@ class OpenLauncher(tk.Tk):
         slot.pack_propagate(False)
         self.progress = ttk.Progressbar(slot, mode="indeterminate", style="Busy.Horizontal.TProgressbar")
         self._progress_on = False
-        self.pages = {k: ttk.Frame(main) for k in ("home", "settings", "activity")}
+        self.pages = {k: ttk.Frame(main) for k in PAGES}
         self._build_activity(self.pages["activity"])     # first: the other pages write to the log
         self._build_settings(self.pages["settings"])
         self._build_home(self.pages["home"])
@@ -182,10 +177,9 @@ class OpenLauncher(tk.Tk):
             p.pack_forget()
             self.nav[k].configure(style="NavOn.TButton" if k == key else "Nav.TButton")
         self.pages[key].pack(fill="both", expand=True)
-        self.page_title.set({"home": "Home", "settings": "Settings", "activity": "Activity"}[key])
-        self.page_sub.set({"home": "Start E-Sys, build definitions, stay up to date",
-                           "settings": "Paths and options, saved to config.json",
-                           "activity": "Everything OpenLauncher did this session"}[key])
+        _, title, sub = PAGES[key]
+        self.page_title.set(title)
+        self.page_sub.set(sub)
 
     def _build_home(self, page):
         # hero: start E-Sys -------------------------------------------------------
@@ -294,8 +288,7 @@ class OpenLauncher(tk.Tk):
         """"Launch options" under Start E-Sys: a dropdown menu of the OpenLauncher features E-Sys gets (or a clean
         boot), and a one-line summary of what's on."""
         C = ui.C
-        self.opt_vars = {k: tk.BooleanVar(value=esys.option(self.cfg, k))
-                         for k in [k for k, _, _ in esys.LAUNCH_OPTIONS] + ["launch_clean"]}
+        self.opt_vars = {k: tk.BooleanVar(value=esys.option(self.cfg, k)) for k in esys.OPTION_LABELS}
         row = ttk.Frame(parent, style="Card.TFrame")
         row.pack(anchor="w", pady=(12, 0))
         self.btn_opts = ttk.Button(row, text="⚙  Launch options  ▾", style="Ghost.TButton",
@@ -322,9 +315,9 @@ class OpenLauncher(tk.Tk):
         self.opt_menu.tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height() + 2)
 
     def _all_options_on(self):
-        for k in self.opt_vars:
-            self.opt_vars[k].set(k != "launch_clean")
+        for k, v in self.opt_vars.items():
             self.cfg[k] = k != "launch_clean"
+            v.set(self.cfg[k])
         config.save(self.cfg)
         self._sync_options()
         self.write("Launch options: all features on (from the next E-Sys start)")
@@ -333,18 +326,17 @@ class OpenLauncher(tk.Tk):
         self.cfg[key] = bool(self.opt_vars[key].get())
         config.save(self.cfg)
         self._sync_options()
-        label = dict((k, lbl) for k, lbl, _ in esys.LAUNCH_OPTIONS).get(key, "Clean boot")
-        self.write(f"Launch option: {label} {'on' if self.cfg[key] else 'off'} (from the next E-Sys start)")
+        self.write(f"Launch option: {esys.OPTION_LABELS[key]} {'on' if self.cfg[key] else 'off'} "
+                   "(from the next E-Sys start)")
 
     def _sync_options(self):
         """Clean boot greys out the features; labels off greys out 'on demand'. Summary + Start button follow."""
-        clean = bool(self.opt_vars["launch_clean"].get())
-        labels = bool(self.opt_vars["launch_labels"].get())
+        state = {k: bool(v.get()) for k, v in self.opt_vars.items()}
+        clean = state["launch_clean"]
         for i, (key, _, _) in enumerate(esys.LAUNCH_OPTIONS):
-            dis = clean or (key == "launch_on_demand" and not labels)
+            dis = clean or (key == "launch_on_demand" and not state["launch_labels"])
             self.opt_menu.entryconfigure(i, state="disabled" if dis else "normal")
-        off = [lbl for k, lbl, _ in esys.LAUNCH_OPTIONS
-               if not self.opt_vars[k].get() or (k == "launch_on_demand" and not labels)]
+        off = esys.options_off(state)
         if clean:
             self.opt_summary.configure(text="Clean boot: E-Sys.bat as it is, no OpenLauncher features",
                                        style="StatWarn.TLabel")
@@ -454,7 +446,6 @@ class OpenLauncher(tk.Tk):
         d = self.cfg.get("esys_dir") or ""
         esys_ok = os.path.exists(os.path.join(d, "lib", "esysGui.jar"))
         psdz_ok = bool(P.psdzdata) and os.path.isdir(os.path.join(P.psdzdata, "swe", "cafd"))
-        n_cache = len(glob.glob(os.path.join(P.cache, "cafd_*.xml.gz")))
         n_defs = len(glob.glob(os.path.join(P.generated, "CAFD_*.xml")))
         ver = esys.esys_version(d) if esys_ok else ""
         self._set_stat("esys", ver or ("Found" if esys_ok else "Not found"),
@@ -469,6 +460,7 @@ class OpenLauncher(tk.Tk):
             self._set_stat("defs", "On demand", "Built as you open CAFDs", "ok")
         # the definition database is only needed by the BimmerCode Backup Editor (and the command-line tools)
         if os.path.exists(P.db):
+            n_cache = len(glob.glob(os.path.join(P.cache, "cafd_*.xml.gz")))
             self._set_stat("db", "Ready", f"{n_cache:,} CAFD versions" if n_cache else "Database built", "ok")
         else:
             self._set_stat("db", "Not built", "Optional: Build definitions", "muted")
@@ -521,10 +513,8 @@ class OpenLauncher(tk.Tk):
                                       f"(e.g. {changed[0]}).\nThey will be backed up to workspace\\backups and "
                                       "replaced by the published versions. Continue?"):
             return
-        self.busy = True
+        self._lock(True)
         self.set_update_state("busy")
-        for w in self.btns + [self.btn_esys]:
-            w.state(["disabled"])
 
         def work():
             try:
@@ -669,6 +659,12 @@ class OpenLauncher(tk.Tk):
         self.after(300, self.destroy)
 
     # ---------------------------------------------------------------- actions
+    def _lock(self, busy):
+        """Mark a background task as running (or finished): the task buttons and Start E-Sys follow."""
+        self.busy = busy
+        for w in self.btns + [self.btn_esys]:
+            w.state(["disabled" if busy else "!disabled"])
+
     def write(self, line):
         up = line.lstrip().upper()
         tag = ("err" if up.startswith(("FAILED", "UPDATE FAILED", "LAUNCHER UPDATE FAILED", "ERROR")) else
@@ -710,10 +706,8 @@ class OpenLauncher(tk.Tk):
                 item = self.q.get_nowait()
                 if callable(item):           # UI change requested by a worker thread
                     item()
-                elif item is None:
-                    self.busy = False
-                    for w in self.btns + [self.btn_esys]:
-                        w.state(["!disabled"])
+                elif item is None:               # a background task finished
+                    self._lock(False)
                     self.refresh_status()
                 else:
                     self.write(item)
@@ -728,21 +722,15 @@ class OpenLauncher(tk.Tk):
         if step == "build" and not esys_ready(self.cfg):
             messagebox.showerror("E-Sys", "Set the E-Sys folder first (it is used to decrypt your psdzdata).")
             return
-        self.busy = True
-        for w in self.btns + [self.btn_esys]:
-            w.state(["disabled"])
+        self._lock(True)
 
         def work():
             try:
-                if step == "build":
-                    pipeline.build(self.q.put, full=True)
-                elif step == "names":
-                    pipeline.build(self.q.put, full=False)
-                else:
+                if step == "check":
                     pipeline.check(self.q.put)
-            except pipeline.StepFailed as e:
-                self.q.put(f"FAILED: {e}")
-            except SystemExit as e:
+                else:
+                    pipeline.build(self.q.put, full=(step == "build"))
+            except (pipeline.StepFailed, SystemExit) as e:
                 self.q.put(f"FAILED: {e}")
             except Exception as e:  # noqa: BLE001
                 self.q.put(f"FAILED: {type(e).__name__}: {e}")

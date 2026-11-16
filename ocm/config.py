@@ -30,6 +30,15 @@ DEFAULTS = {
 }
 
 
+def app_version():
+    """'2.3.0' for a release install (VERSION is added by installer/build_release.py), '' for a source checkout."""
+    try:
+        with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip().lstrip("v")
+    except OSError:
+        return ""
+
+
 def load():
     cfg = dict(DEFAULTS)
     if os.path.exists(CONFIG_FILE):

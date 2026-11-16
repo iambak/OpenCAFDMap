@@ -21,7 +21,8 @@ import subprocess
 import sys
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 import config  # noqa: E402
 
 # Built-in launch recipe = E-Sys 25.10's E-Sys.bat. Only used when the user's own E-Sys.bat can't be read.
@@ -239,7 +240,7 @@ def prepare(cfg=None, out=print):
     py = sys.executable
     if py.lower().endswith("pythonw.exe"):
         py = py[:-len("pythonw.exe")] + "python.exe"
-    pr = subprocess.run([py, "-u", os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime_defs.py"),
+    pr = subprocess.run([py, "-u", os.path.join(HERE, "runtime_defs.py"),
                          "--prepare"], capture_output=True, text=True, encoding="utf-8", errors="replace",
                         env=dict(os.environ, PYTHONIOENCODING="utf-8"), creationflags=NO_WINDOW,
                         stdin=subprocess.DEVNULL)
@@ -258,14 +259,24 @@ LAUNCH_OPTIONS = [  # key, label, help
     ("launch_tools", "Additional Utilities", "Compare NCD and Cheat Sheet in E-Sys's navigation bar"),
     ("launch_backup", "FA / SVT auto-backup", "Copies every FA / SVT read from the car to FA\\FABak and SVT\\SVTBak"),
 ]
+OPTION_LABELS = {k: label for k, label, _ in LAUNCH_OPTIONS}
+OPTION_LABELS["launch_clean"] = "Clean boot"
+FEATURES = (("labels", "launch_labels"), ("tools", "launch_tools"), ("backup", "launch_backup"))  # -Docm.feature.*
 
 
 def option(cfg, key):
-    """A launch option's value (all features default to on)."""
-    return bool(cfg.get(key, key != "launch_clean"))
+    """A launch option's value (defaults: config.DEFAULTS, i.e. every feature on, clean boot off)."""
+    return bool(cfg.get(key, config.DEFAULTS[key]))
 
 
-def splash_image(cfg=None):
+def options_off(cfg):
+    """Labels of the features that are off ('Build labels on demand' also counts as off when labels are off)."""
+    labels = option(cfg, "launch_labels")
+    return [lbl for k, lbl, _ in LAUNCH_OPTIONS
+            if not option(cfg, k) or (k == "launch_on_demand" and not labels)]
+
+
+def splash_image():
     """OpenLauncher's animated splash (assets/openlauncher.gif); E-Sys's own splash.gif if it's missing."""
     own = os.path.join(config.ROOT, "assets", "openlauncher.gif")
     return own if os.path.exists(own) else "../splash.gif"
@@ -293,6 +304,7 @@ def launch_command(cfg, spec=None):
     os.makedirs(p.generated, exist_ok=True)
     os.makedirs(p.logs, exist_ok=True)
     javaw = os.path.join(d, "jre", "bin", "javaw.exe")
+    home = config.esys_properties(cfg).get("Path.Home", "")
     props = [
         "-Docm.launcher=1",                                   # the only switch that enables our code
         f"-Docm.defs={p.generated}",
@@ -301,13 +313,10 @@ def launch_command(cfg, spec=None):
         f"-Docm.log={os.path.join(p.logs, 'agent.log')}",
         f"-Docm.series={cfg['series']}",
         f"-Docm.python={pythonw()}",
-        # launch options: the agent skips what is off
-        f"-Docm.feature.labels={'1' if option(cfg, 'launch_labels') else '0'}",
-        f"-Docm.feature.tools={'1' if option(cfg, 'launch_tools') else '0'}",
-        f"-Docm.feature.backup={'1' if option(cfg, 'launch_backup') else '0'}",
-        f"-Docm.tools={os.path.dirname(os.path.abspath(__file__))}",
-        f"-Docm.cafdir={os.path.join(config.esys_properties(cfg).get('Path.Home', ''), 'CAF')}",  # Compare NCD default
-        f"-Docm.datadir={config.esys_properties(cfg).get('Path.Home', '')}",  # FA/SVT backups (FA\FABak, SVT\SVTBak)
+    ] + [f"-Docm.feature.{name}={int(option(cfg, key))}" for name, key in FEATURES] + [  # the agent skips what is off
+        f"-Docm.tools={HERE}",
+        f"-Docm.cafdir={os.path.join(home, 'CAF')}",          # Compare NCD default
+        f"-Docm.datadir={home}",                              # FA/SVT backups (FA\FABak, SVT\SVTBak)
         f"-Docm.cheatdir={cfg.get('cheat_sheets_dir') or ''}",  # your local cheat sheets (Cheat Sheet window)
         f"-Docm.main={spec['main']}",                         # E-Sys's main class (from E-Sys.bat)
         f"-Docm.esysVersion={esys_version(d)}",
@@ -317,7 +326,7 @@ def launch_command(cfg, spec=None):
     if option(cfg, "launch_labels") and option(cfg, "launch_on_demand"):   # CAFDs without a definition get one on demand
         props.append(f"-Docm.runtime={os.path.join(p.workspace, 'runtime_cafd', cfg['series'])}")
     return [javaw] + spec["vm_options"] + props + [
-        "-cp", ";".join(spec["classpath"]), f"-splash:{splash_image(cfg)}",
+        "-cp", ";".join(spec["classpath"]), f"-splash:{splash_image()}",
         "jdk.nashorn.tools.Shell", os.path.join(config.ESYS_SCRIPTS, "bootstrap.js")]
 
 
@@ -338,17 +347,12 @@ def launch(cfg=None):
         except OSError:
             pass
     lf = open(log, "w", encoding="utf-8")
-    ver = ""
-    try:
-        ver = open(os.path.join(config.ROOT, "VERSION"), encoding="utf-8").read().strip()
-    except OSError:
-        pass
-    lf.write(f"# OpenLauncher {ver or '(source checkout)'} starting E-Sys {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n"
+    off = options_off(cfg)
+    lf.write(f"# OpenLauncher {config.app_version() or '(source checkout)'} starting E-Sys {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n"
              f"# E-Sys {esys_version(d) or '?'} in {d}, Java {java_major(d) or '?'}\n"
              f"# launch recipe: {spec['source']}; main class {spec['main']}; working folder {spec['cwd']}\n"
              + (f"# options in E-Sys.bat not used: {' '.join(spec['dropped'])}\n" if spec["dropped"] else "")
-             + (f"# launch options off: {', '.join(lbl for k, lbl, _ in LAUNCH_OPTIONS if not option(cfg, k))}\n"
-                if any(not option(cfg, k) for k, _, _ in LAUNCH_OPTIONS) else "")
+             + (f"# launch options off: {', '.join(off)}\n" if off else "")
              + f"# command: {subprocess.list2cmdline(cmd)}\n\n")
     lf.flush()
     try:
