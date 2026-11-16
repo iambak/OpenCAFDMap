@@ -564,7 +564,7 @@ class OpenLauncher(tk.Tk):
         else:
             cur = updater.launcher_installed()
             text = (f"Installed launcher: {('v' + cur) if cur else 'source checkout'}"
-                    + (f"     Available: v{available}" if available else ""))
+                    + (f"     Available: v{available}" if available and state == "available" else ""))
         self.launcher_label.set(text + (f"     ({why})" if why else ""))
 
     def launcher_clicked(self):
