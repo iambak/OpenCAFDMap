@@ -11,6 +11,7 @@ Writes (deterministic gzip, so an unchanged rebuild gives identical files):
                             flag S = standard, O = optional, T = comes with the type key (ISTA);
                             C = allowed for the type key in its class (KIS), V = available in that window (KIS)
   data\fa\codes.tsv.gz     code -> kind (SA / E / HO), title, classes (KIS group:class:strict|soft)
+  data\fa\series.tsv.gz    main series -> every option / E-word / HO-word / type key its FA->FP mapping knows
   data\fa\SOURCES.txt      the ISTA and psdzdata versions the tables were built from
 A class is "strict" when no type key fits two of its options as standard at the same time (ISTA), else "soft".
 """
@@ -188,6 +189,10 @@ def main():
                                  "kis_group", "options", "sources"], tk_rows)
     write_gz("options.tsv.gz", ["list", "code", "flag", "from", "to"], list_rows)
     write_gz("codes.tsv.gz", ["code", "kind", "title", "classes"], code_rows)
+    # every option / E-word / HO-word / type key each main series' FA->FP mapping knows (the helper's full code lists)
+    write_gz("series.tsv.gz", ["series", "kind", "codes"],
+             [[s, {"W": "SA", "H": "E", "K": "HO", "T": "TK"}[sel], " ".join(sorted(codes))]
+              for (s, sel), codes in sorted(fafp.items())])
     with open(os.path.join(OUT, "SOURCES.txt"), "w", encoding="utf-8", newline="\n") as f:
         f.write("FA / VO Helper tables (built by ocm/fa_tables.py)\n"
                 f"ISTA database {ista_version}\npsdzdata {psdz}\n"
@@ -196,7 +201,7 @@ def main():
     print(f"type keys {len(tk_rows)} (ISTA option lists {len(ista_types)}, KIS {len(kis_attr)}, "
           f"in FA->FP mappings {len(main_series)}); option lists {len(lists)} ({len(list_rows)} rows); "
           f"codes {len(code_rows)}; classes {len(classes)} ({len(soft)} soft: {' '.join(soft[:12])})")
-    for n in ("typekeys.tsv.gz", "options.tsv.gz", "codes.tsv.gz"):
+    for n in ("typekeys.tsv.gz", "options.tsv.gz", "codes.tsv.gz", "series.tsv.gz"):
         print(f"  {n}: {os.path.getsize(os.path.join(OUT, n)) / 1e6:.2f} MB")
 
 
