@@ -190,14 +190,19 @@
   }
   var FalLogic = cls("com.bmw.esys.domain.fa.FalLogic");
   var fileHandling = new java.util.IdentityHashMap();   // FalLogic -> its editor's DefaultFileHandlingController
+  var moduleOf = new java.util.IdentityHashMap();       // FalLogic -> E-Sys module it belongs to (Coding, FA editor, ...)
+  function moduleName(lg) {
+    var m = String(moduleOf.get(lg) || "");
+    return /coding/i.test(m) ? "Coding" : /fa|fal/i.test(m) ? "FA editor" : (m || "E-Sys");
+  }
   // every FalLogic E-Sys's modules hold (Coding's vehicle order, the FA editor), with a document loaded first
   function faLogics() {
     var out = [], seen = new java.util.IdentityHashMap(), Tree = cls("com.bmw.esys.gui.AbstractTreeController");
     var inst = getField(null, cls("com.bmw.esys.gui.control.EsysController"), "instance");
     var mods = inst ? getField(inst, cls("com.bmw.esys.gui.control.EsysController"), "cacheModules") : null;
     if (!mods || !FalLogic || !Tree) return out;
-    var queue = [], it = mods.values().iterator();
-    while (it.hasNext()) queue.push({ o: it.next(), d: 0 });
+    var queue = [], it = mods.entrySet().iterator();
+    while (it.hasNext()) { var me = it.next(); queue.push({ o: me.getValue(), d: 0, mod: String(me.getKey()) }); }
     while (queue.length) {
       var e = queue.shift(), o = e.o;
       if (!o || seen.containsKey(o)) continue;
@@ -209,6 +214,7 @@
           out.push(lg);
           var fh = getField(o, Tree, "fileHandling");      // E-Sys's file handling for that editor (shows the model)
           if (fh) fileHandling.put(lg, fh);
+          moduleOf.put(lg, e.mod);
         }
       }
       if (e.d >= 3) continue;
@@ -217,7 +223,7 @@
         var fs = c.getDeclaredFields();
         for (var i = 0; i < fs.length; i++) {
           if (fs[i].getType().isPrimitive() || java.lang.reflect.Modifier.isStatic(fs[i].getModifiers())) continue;
-          try { fs[i].setAccessible(true); var v = fs[i].get(o); if (v && String(v.getClass().getName()).indexOf("com.bmw.esys.gui") === 0) queue.push({ o: v, d: e.d + 1 }); } catch (eF) {}
+          try { fs[i].setAccessible(true); var v = fs[i].get(o); if (v && String(v.getClass().getName()).indexOf("com.bmw.esys.gui") === 0) queue.push({ o: v, d: e.d + 1, mod: e.mod }); } catch (eF) {}
         }
         c = c.getSuperclass();
       }
@@ -501,14 +507,21 @@
       }).start();
     }
     function readFromEsys() {
-      var ls = faLogics(), lg = null;
-      for (var i = 0; i < ls.length; i++) if (ls[i].getModel()) { lg = ls[i]; break; }
-      if (!lg) { status.setText("E-Sys has no FA open: read or load one in Coding > Vehicle order (or the FA editor) first."); return; }
+      var ls = faLogics().filter(function (l) { return !!l.getModel(); }), lg = null;
+      if (!ls.length) { status.setText("E-Sys has no FA open: read or load one in Coding > Vehicle order (or the FA editor) first."); return; }
+      lg = ls[0];
+      if (ls.length > 1) {      // FAs open in more than one module: ask which
+        var names = ls.map(function (l, i) { return (i + 1) + ". " + moduleName(l) + " (" + (stateOf(activeId(l)).tk || "?") + ")"; });
+        var pick = Sw.JOptionPane.showInputDialog(root, "E-Sys has an FA open in more than one place. Which one?", "FA Helper",
+                                                  Sw.JOptionPane.QUESTION_MESSAGE, null, Java.to(names, "java.lang.Object[]"), names[0]);
+        if (pick === null) return;
+        lg = ls[names.indexOf(String(pick))];
+      }
       var act = activeId(lg);
       if (!act) { status.setText("E-Sys's FA list has no FA to use."); return; }
       // work on a copy; its FA at the same position as E-Sys's active one
       var list = copyList(lg.getModel()), pos = Math.max(0, lg.getModel().getId().indexOf(act));
-      load(list, list.getId().get(Math.min(pos, list.getId().size() - 1)), lg, "E-Sys FA");
+      load(list, list.getId().get(Math.min(pos, list.getId().size() - 1)), lg, "E-Sys FA (" + moduleName(lg) + ")");
       status.setText("Read E-Sys's FA (" + (S.st.tk || "?") + ", " + Object.keys(S.st.sa).length + " options). Edits stay here until you Apply.");
       log("FA Helper: read E-Sys's FA " + S.st.series + " " + S.st.tk);
     }
@@ -607,6 +620,7 @@
     // Apply: E-Sys's FA editor gets a copy of its document with this FA edited (E-Sys marks it changed)
     bApply.addActionListener(function () {
       if (!S.st || !S.logic) return;
+      if (h.applyEnabled === false) { status.setText(h.applyOffReason || "Apply is off on this E-Sys version."); return; }
       current();
       try {
         var model = S.logic.getModel(), list = model ? copyList(model) : copyList(S.list);
@@ -625,7 +639,7 @@
         S.base = stateOf(S.id);
         bApply.setEnabled(false);
         status.setText("Applied to E-Sys's FA. Save it or write it in E-Sys as usual.");
-        log("FA Helper: applied FA " + S.st.tk + " (" + Object.keys(S.st.sa).length + " options) to E-Sys's FA editor");
+        log("FA Helper: applied FA " + S.st.tk + " (" + Object.keys(S.st.sa).length + " options) to E-Sys's " + moduleName(S.logic));
       } catch (e) {
         status.setText("Apply failed: " + e + ". Use Save FA as... and load the file in E-Sys instead.");
         log("FA Helper apply failed: " + e);

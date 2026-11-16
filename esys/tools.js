@@ -491,7 +491,11 @@
     if (dataDir && new File(dataDir, "fa").isDirectory()) {
       faHelper = load(new File(new File(String(System.getProperty("ocm.agent"))).getParentFile(), "fahelper.js").getPath())({
         log: log, cls: cls, dataDir: dataDir,
-        esysDataDir: System.getProperty("ocm.datadir") ? String(System.getProperty("ocm.datadir")) : null
+        esysDataDir: System.getProperty("ocm.datadir") ? String(System.getProperty("ocm.datadir")) : null,
+        // same soft gate as Cheat Sheet Apply: editing E-Sys's documents only on tested versions unless "Try anyway"
+        applyEnabled: TESTED || TRY,
+        applyOffReason: "Apply is off on E-Sys " + (ESYS_VER || "(unknown version)") + ": OpenLauncher wasn't tested with " +
+                        "this version. Use Save FA as..., or tick \"Try anyway\" in OpenLauncher and restart E-Sys."
       });
     } else {
       log("FA Helper not added: no data\\fa\\ tables (Check for updates in OpenLauncher)");
