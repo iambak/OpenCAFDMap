@@ -87,6 +87,24 @@ def ista_db_problem(path):
     return "" if ok else "doesn't have ISTA's option table (XEP_SALAPAS): not a DiagDocDb"
 
 
+def ista_db_status(path):
+    """(level, text) for Settings and the Build definitions dialog: level is 'none', 'ok' or 'bad'."""
+    if not (path or "").strip():
+        return "none", "Optional: not set, the shipped option titles are used"
+    bad = ista_db_problem(path)
+    if not bad:
+        return "ok", "\u2713 Decrypted DiagDocDb: option titles come from ISTA"
+    if bad.startswith("not a plain SQLite"):
+        what = "Encrypted (ISTA's own file) or not a database"
+    elif bad == "file not found":
+        what = "File not found"
+    elif bad.startswith("doesn't have"):
+        what = "Not ISTA's DiagDocDb"
+    else:
+        what = "Can't be read"
+    return "bad", f"\u2717 {what}: the shipped option titles are used"
+
+
 def guess_esys_dir():
     for pat in (r"C:\EC-Apps\ESG\E-Sys", r"C:\EC-Apps\E-Sys*", r"C:\ESG\E-Sys*", r"C:\Program Files*\E-Sys*"):
         for d in sorted(glob.glob(pat), reverse=True):

@@ -92,8 +92,10 @@ class OpenLauncher(tk.Tk):
         super().__init__()
         self.title(f"OpenLauncher {VERSION} - Open CAFD Map".replace("  ", " "))
         appicon.apply(self)
-        self.geometry("1120x780")
-        self.minsize(980, 680)
+        # 1120x780 where it fits; on a smaller screen, as big as the screen allows (the pages scroll)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f"{min(1120, sw - 40)}x{min(780, sh - 90)}")
+        self.minsize(min(980, sw - 40), min(480, sh - 90))
         self.f = ui.apply(self)
         self.cfg = config.load()
         self.vars = {}
@@ -176,10 +178,13 @@ class OpenLauncher(tk.Tk):
         slot.pack_propagate(False)
         self.progress = ttk.Progressbar(slot, mode="indeterminate", style="Busy.Horizontal.TProgressbar")
         self._progress_on = False
-        self.pages = {k: ttk.Frame(main) for k in PAGES}
-        self._build_activity(self.pages["activity"])     # first: the other pages write to the log
-        self._build_settings(self.pages["settings"])
-        self._build_home(self.pages["home"])
+        # Home and Settings scroll when the window is too short for them (small laptop screens); Activity's log
+        # scrolls on its own
+        body = {k: (ttk.Frame(main) if k == "activity" else ui.scrollable(main)) for k in PAGES}
+        self.pages = {k: getattr(f, "outer", f) for k, f in body.items()}
+        self._build_activity(body["activity"])     # first: the other pages write to the log
+        self._build_settings(body["settings"])
+        self._build_home(body["home"])
 
     def show_page(self, key):
         for k, p in self.pages.items():
@@ -390,13 +395,17 @@ class OpenLauncher(tk.Tk):
             if kind in ("dir", "file"):
                 ttk.Button(s, text="Browse", style="Ghost.TButton",
                            command=lambda k=key, t=kind: self.browse(k, t)).grid(row=r, column=2, padx=(8, 0))
-            ttk.Label(s, text=hlp[:1].upper() + hlp[1:], style="CardMuted.TLabel").grid(row=r + 1, column=1,
-                                                                                     sticky="w", pady=(1, 8))
+            hl = ttk.Label(s, text=hlp[:1].upper() + hlp[1:], style="CardMuted.TLabel")
+            hl.grid(row=r + 1, column=1, sticky="w", pady=(1, 8))
+            if key == "ista_db":              # live: decrypted (usable) or encrypted / not a DiagDocDb
+                self.ista_status = hl
+                hl.configure(wraplength=560, justify="left")
+                v.trace_add("write", lambda *_: self._ista_status())
+                self._ista_status()
         s.columnconfigure(1, weight=1)
 
         o = ui.card(page, padding=(22, 16))
         o.outer.pack(fill="x", pady=(14, 0))
-        ttk.Button(o, text="Save settings", style="Accent.TButton", command=self.save).pack(side="right", anchor="s")
         ttk.Label(o, text="Options", style="CardH.TLabel").pack(anchor="w", pady=(0, 8))
         self.all_versions = tk.BooleanVar(value=bool(self.cfg.get("export_all_versions")))
         ttk.Checkbutton(o, text="Export every CAFD version (bigger; otherwise the newest 3 plus the versions in your "
@@ -406,6 +415,8 @@ class OpenLauncher(tk.Tk):
         ttk.Checkbutton(o, text="Try anyway: allow Cheat Sheet Apply on E-Sys versions OpenLauncher wasn't tested "
                                 "with (tested: 25.x)", variable=self.try_untested,
                         style="Card.TCheckbutton").pack(anchor="w", pady=2)
+        # under the options, not beside them: on a narrow window it would cut their text off
+        ttk.Button(o, text="Save settings", style="Accent.TButton", command=self.save).pack(anchor="e", pady=(10, 0))
 
     def _build_activity(self, page):
         bar = ttk.Frame(page)
@@ -434,6 +445,11 @@ class OpenLauncher(tk.Tk):
         inner.columnconfigure(0, weight=1)
 
     # ---------------------------------------------------------------- settings
+    def _ista_status(self):
+        level, text = config.ista_db_status(self.vars["ista_db"].get())
+        self.ista_status.configure(text=text, style={"ok": "StatOk.TLabel", "bad": "StatBad.TLabel"}.get(
+            level, "CardMuted.TLabel"))
+
     def browse(self, key, kind):
         cur = self.vars[key].get()
         if kind == "dir":
@@ -778,12 +794,25 @@ class OpenLauncher(tk.Tk):
             pass
         self.after(100, self._drain)
 
+    def _build_question(self):
+        _, titles = config.ista_db_status(self.cfg.get("ista_db"))
+        on_demand = esys.option(self.cfg, "launch_labels") and esys.option(self.cfg, "launch_on_demand")
+        first = ("E-Sys doesn't need this: OpenLauncher names each CAFD the first time you open it in E-Sys."
+                 if on_demand else
+                 "Build labels on demand is off in Launch options, so E-Sys only shows names for CAFDs that have "
+                 "been built.")
+        return (f"{first}\n\nBuild definitions is needed for the BimmerCode Backup Editor and the command-line tools. "
+                "The first build reads every CAFD in your psdzdata and can take half an hour or more.\n\n"
+                f"Option titles: {titles}.\n\nBuild now?")
+
     def run_step(self, step):
         if self.busy:
             return
         self.save(quiet=True)
         if step == "build" and not esys_ready(self.cfg):
             messagebox.showerror("E-Sys", "Set the E-Sys folder first (it is used to decrypt your psdzdata).")
+            return
+        if step == "build" and not messagebox.askyesno("Build definitions", self._build_question(), icon="question"):
             return
         self._lock(True)
 

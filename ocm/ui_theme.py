@@ -161,6 +161,56 @@ def apply(root):
     return f
 
 
+_SCROLLERS = []   # (canvas, inner) of every scrollable page, for the mouse wheel
+
+
+def _wheel(event):
+    """Mouse wheel anywhere on a scrollable page scrolls that page (when it's taller than the window)."""
+    w = str(event.widget)
+    for canvas, inner in _SCROLLERS:
+        if (w == str(canvas) or w.startswith(str(inner))) and canvas.winfo_ismapped():
+            if inner.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(int(-event.delta / 120) or (-1 if event.delta > 0 else 1), "units")
+            return "break"
+    return None
+
+
+def scrollable(parent):
+    """A page that scrolls when it doesn't fit (short laptop screens). Returns the frame to build into; pack
+    `frame.outer`. The scrollbar only shows while the content is taller than the window, and the content fills the
+    window's height otherwise, so pages lay out exactly as before on a big screen."""
+    outer = ttk.Frame(parent)
+    canvas = tk.Canvas(outer, bg=C["bg"], highlightthickness=0, bd=0)
+    bar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+    inner = ttk.Frame(canvas)
+    win = canvas.create_window(0, 0, window=inner, anchor="nw")
+    canvas.configure(yscrollcommand=bar.set)
+    canvas.pack(side="left", fill="both", expand=True)
+
+    def layout(_=None):
+        need, have = inner.winfo_reqheight(), canvas.winfo_height()
+        canvas.itemconfigure(win, width=canvas.winfo_width(), height=max(need, have))
+        canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), max(need, have)))
+        if need > have > 1:
+            if not bar.winfo_ismapped():
+                bar.pack(side="right", fill="y", padx=(6, 0))
+        else:
+            if bar.winfo_ismapped():
+                bar.pack_forget()
+            canvas.yview_moveto(0)
+
+    canvas.bind("<Configure>", layout)
+    inner.bind("<Configure>", layout)
+    if not _SCROLLERS:
+        root = parent.winfo_toplevel()
+        root.bind_all("<MouseWheel>", _wheel, add="+")
+        # a closed dropdown under the pointer scrolls the page instead of changing its value by accident
+        root.bind_class("TCombobox", "<MouseWheel>", _wheel)
+    _SCROLLERS.append((canvas, inner))
+    inner.outer = outer
+    return inner
+
+
 def card(parent, padding=16):
     """A flat card: a 1-px border around a padded surface. Returns the inner frame."""
     outer = tk.Frame(parent, bg=C["border"], highlightthickness=0, bd=0)
