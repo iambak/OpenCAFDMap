@@ -184,16 +184,30 @@ def load_crits(a):
             for cat, cv in re.findall(r'<fpElement categoryVal="(\d+)" criteriaVal="(\d+)"', block):
                 by[int(cv)].append((fe.group(1), fe.group(2), int(cat)))
         sa_titles = {}
-        if a.ista and os.path.exists(a.ista):
-            con = sqlite3.connect(f"file:{a.ista}?mode=ro", uri=True)
-            # One code can have a car title (PRODUCT_TYPE P) and a motorcycle title (M), e.g. 255 =
-            # sport leather steering wheel / special model Dark White: take the car title first.
-            for name, en, de in con.execute("SELECT NAME, TITLE_ENGB, TITLE_DEDE FROM XEP_SALAPAS "
-                                            "ORDER BY PRODUCT_TYPE <> 'P', ID"):
-                if name and name not in sa_titles:
-                    sa_titles[name] = en or de
-            con.close()
-        elif a.sa_titles and os.path.exists(a.sa_titles):
+        # The ISTA DiagDocDb is optional: when it can't be used (most often ISTA's own, encrypted file), say so and
+        # take the option titles that ship with Open CAFD Map instead of failing the build.
+        bad = config.ista_db_problem(a.ista) if a.ista else ""
+        if bad:
+            print(f"WARNING: ISTA DiagDocDb {a.ista}: {bad}. Using the shipped option titles "
+                  f"(data\\sa_titles.tsv) instead; clear Settings > ISTA DiagDocDb to stop this warning.", flush=True)
+            a.ista = None
+        if a.ista:
+            try:
+                con = sqlite3.connect(f"file:{a.ista}?mode=ro", uri=True)
+                try:
+                    # One code can have a car title (PRODUCT_TYPE P) and a motorcycle title (M), e.g. 255 =
+                    # sport leather steering wheel / special model Dark White: take the car title first.
+                    for name, en, de in con.execute("SELECT NAME, TITLE_ENGB, TITLE_DEDE FROM XEP_SALAPAS "
+                                                    "ORDER BY PRODUCT_TYPE <> 'P', ID"):
+                        if name and name not in sa_titles:
+                            sa_titles[name] = en or de
+                finally:
+                    con.close()
+            except sqlite3.Error as e:
+                print(f"WARNING: ISTA DiagDocDb {a.ista} couldn't be read ({e}). Using the shipped option titles "
+                      f"instead.", flush=True)
+                sa_titles, a.ista = {}, None
+        if not sa_titles and a.sa_titles and os.path.exists(a.sa_titles):
             for line in open(a.sa_titles, encoding="utf-8"):
                 f = line.rstrip("\r\n").split("\t")
                 if not line.startswith("#") and len(f) >= 2 and f[0] != "code":

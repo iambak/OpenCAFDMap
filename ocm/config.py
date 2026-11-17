@@ -61,6 +61,32 @@ def save(cfg):
         json.dump(out, f, indent=2)
 
 
+def ista_db_problem(path):
+    """Why this file can't be used as the optional ISTA DiagDocDb ('' when it can). ISTA ships its DiagDocDb
+    encrypted; only a decrypted copy is a plain SQLite database that Python can read."""
+    if not path:
+        return ""
+    if not os.path.isfile(path):
+        return "file not found"
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+    except OSError as e:
+        return f"can't be read ({e.strerror or e})"
+    if head != b"SQLite format 3\x00":
+        return "not a plain SQLite database: ISTA's own DiagDocDb is encrypted, and only a decrypted copy works"
+    import sqlite3
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            ok = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='XEP_SALAPAS'").fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error as e:
+        return f"can't be opened ({e})"
+    return "" if ok else "doesn't have ISTA's option table (XEP_SALAPAS): not a DiagDocDb"
+
+
 def guess_esys_dir():
     for pat in (r"C:\EC-Apps\ESG\E-Sys", r"C:\EC-Apps\E-Sys*", r"C:\ESG\E-Sys*", r"C:\Program Files*\E-Sys*"):
         for d in sorted(glob.glob(pat), reverse=True):

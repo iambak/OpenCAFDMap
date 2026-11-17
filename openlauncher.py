@@ -461,6 +461,14 @@ class OpenLauncher(tk.Tk):
         self.refresh_status()
         if not quiet:
             self.write("Settings saved to config.json")
+            bad = config.ista_db_problem(self.cfg.get("ista_db"))
+            if bad:
+                self.write(f"ISTA DiagDocDb: {bad}. Builds use the shipped option titles instead.")
+                messagebox.showwarning(
+                    "ISTA DiagDocDb",
+                    f"This file can't be used as the ISTA DiagDocDb:\n{self.cfg['ista_db']}\n\n{bad}.\n\n"
+                    "It's optional: Build definitions uses the option titles that ship with Open CAFD Map "
+                    "instead. Clear the field if you don't have a decrypted copy.")
 
     def _set_stat(self, key, value, detail, level="ok"):
         v, d, dl = self.stat[key]
