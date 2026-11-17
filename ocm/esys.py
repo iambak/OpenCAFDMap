@@ -315,6 +315,24 @@ def ui_scale_value(text):
     m = re.match(r"^\d+(\.\d+)?$", t.split(" ")[0]) if t else None
     return m.group(0) if m else ""
 
+# OpenLauncher > Settings > E-Sys language: for E-Sys started by OpenLauncher only. E-Sys picks its language once while
+# it starts, from language= in config\Esys.properties (which isn't changed): esys/bootstrap.js sets it in E-Sys's
+# settings in memory for that start-up. "" = E-Sys's own setting.
+ESYS_LANGUAGES = [("", "E-Sys default (its own language setting)"), ("en", "English"), ("de", "German (Deutsch)")]
+
+
+def esys_language_label(value):
+    return dict(ESYS_LANGUAGES).get((value or "").strip(), dict(ESYS_LANGUAGES)[""])
+
+
+def esys_language_value(text):
+    """Settings text (or a stored value) -> value for config.json: '', 'en' or 'de'."""
+    t = (text or "").strip()
+    for v, label in ESYS_LANGUAGES:
+        if t in (v, label) and t:
+            return v
+    return ""
+
 
 def vm_options(cfg, spec):
     """E-Sys's VM options (from its E-Sys.bat), with OpenLauncher's UI-scale override when one is set."""
@@ -353,7 +371,8 @@ def launch_command(cfg, spec=None):
         f"-Docm.main={spec['main']}",                         # E-Sys's main class (from E-Sys.bat)
         f"-Docm.esysVersion={esys_version(d)}",
         f"-Docm.testedEsys={','.join(TESTED_ESYS)}",
-        f"-Docm.tryUntested={'1' if cfg.get('try_untested_esys') else '0'}",  # Cheat Sheet Apply on untested versions
+        f"-Docm.tryUntested={'1' if cfg.get('try_untested_esys') else '0'}",
+        f"-Docm.esysLanguage={esys_language_value(cfg.get('esys_language'))}",  # E-Sys's language, "" = its own  # Cheat Sheet Apply on untested versions
     ] + nashorn_options(d)
     if option(cfg, "launch_labels") and option(cfg, "launch_on_demand"):   # CAFDs without a definition get one on demand
         props.append(f"-Docm.runtime={os.path.join(p.workspace, 'runtime_cafd', cfg['series'])}")
@@ -387,6 +406,8 @@ def launch(cfg=None):
              + (f"# launch options off: {', '.join(off)}\n" if off else "")
              + (f"# UI scale set in OpenLauncher: {ui_scale_value(cfg.get('esys_ui_scale'))}\n"
                 if ui_scale_value(cfg.get("esys_ui_scale")) else "")
+             + (f"# E-Sys language set in OpenLauncher: {esys_language_label(cfg.get('esys_language'))}\n"
+                if esys_language_value(cfg.get("esys_language")) else "")
              + f"# command: {subprocess.list2cmdline(cmd)}\n\n")
     lf.flush()
     try:
