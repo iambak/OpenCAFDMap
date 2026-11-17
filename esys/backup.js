@@ -126,9 +126,18 @@
   });
 
   // ------------------------------------------------------------------ decide + write
-  // E-Sys's own text for "read from the vehicle" (gui.FRM, what DefaultFileHandlingController.openRead shows)
-  var READ_DESC = null;
-  try { READ_DESC = String(Java.type("com.bmw.esys.gui.Messages").getString("gui.FRM")); } catch (eM) {}
+  // E-Sys's own text for "read from the vehicle" (gui.FRM, what DefaultFileHandlingController.openRead shows).
+  // Read on first use, never at start-up: E-Sys's Messages caches its bundle on the first read, and this script runs
+  // before E-Sys applies language= from Esys.properties. An early read on a Windows that isn't English or German locks
+  // E-Sys's whole GUI into the German base bundle.
+  var READ_DESC;
+  function readDesc() {
+    if (READ_DESC === undefined) {
+      READ_DESC = null;
+      try { READ_DESC = String(Java.type("com.bmw.esys.gui.Messages").getString("gui.FRM")); } catch (eM) {}
+    }
+    return READ_DESC;
+  }
   function source(fh) {
     var proxy = getField(fh, C.fh, "currentFile");
     // FileProxy is a non-public inner class: read its fields, its getters aren't callable from here
@@ -254,7 +263,8 @@
         if (src.file !== null && src.file.exists()) continue;   // opened from (or saved to) a file: not a vehicle read
         // E-Sys marks a document without a file as read ("File read, not saved yet."), generated or updated (e.g. an
         // FA changed by the FA Helper's Apply): only a read comes from the vehicle
-        if (READ_DESC && src.desc && src.desc !== READ_DESC) continue;
+        var rd = readDesc();
+        if (rd && src.desc && src.desc !== rd) continue;
         if (!logic.getModel()) continue;                         // closed / cleared
         write(kind, logic);
       } catch (eW) {
