@@ -10,6 +10,7 @@ Package rows (tab separated):   kind  address  layout_hash  start  end  mask  va
 
 Packing (merges into existing files, never drops entries):
     python ocm\untrimmed.py pack-dumps <folder>     XML dumps (CafdDefinition with every function, e.g. Agent3353)
+    python ocm\untrimmed.py pack-caf <folder>       decrypted psdzdata CAFDs (<caf> XML) that still carry their names
     python ocm\untrimmed.py pack-db <sqlite> [src..]  names already in a definition DB (default sources: untrimmed fwl)
     python ocm\untrimmed.py stats
 """
@@ -142,6 +143,54 @@ def pack_dumps(folder):
     print(f"{len(per)} CAFD ids from {folder} -> {PACK_DIR} ({total} rows)")
 
 
+CAF_NS = {"c": "http://bmw.com/2005/psdz.data.caf"}
+CAF_FILE = re.compile(r"(?:cafd_)?([0-9A-Fa-f]{8})[._]")
+
+
+def pack_caf(folder):
+    """Decrypted psdzdata CAFDs (<caf> XML: cafd_<id>.caf.<ver>.xml or <id>_<ver>.xml) from a psdzdata old enough to
+    still carry its names. Only the names are read; the files themselves must never be committed."""
+    per = defaultdict(lambda: defaultdict(lambda: {"G": None, "F": {}, "V": {}}))
+    clean = lambda n: re.sub(r"\s+", " ", n or "").strip()
+    n = 0
+    for p in sorted(glob.glob(os.path.join(folder, "*.xml"))):
+        m = CAF_FILE.match(os.path.basename(p))
+        if not m:
+            continue
+        try:
+            data = ET.parse(p).getroot().find("c:data", CAF_NS)
+        except ET.ParseError as e:
+            print(f"  skipped {os.path.basename(p)}: {e}", file=sys.stderr)
+            continue
+        n += 1
+        for dg in data.findall("c:datagroup", CAF_NS) if data is not None else ():
+            fns = []
+            for fn in dg.findall("c:function", CAF_NS):
+                si = fn.find("c:storageInfo", CAF_NS)
+                st = int(si.findtext("c:start", "0", CAF_NS))
+                fns.append((st, int(si.findtext("c:end", str(st), CAF_NS)),
+                            (si.findtext("c:mask", "", CAF_NS) or "").strip(), fn))
+            e = per[m.group(1).upper()][((dg.get("address") or "").upper(), layout_hash([f[:3] for f in fns]))]
+            if not placeholder(clean(dg.get("name"))):
+                e["G"] = clean(dg.get("name"))
+            for st, en, mk, fn in fns:
+                k = (st, en, norm_mask(mk))
+                if not placeholder(clean(fn.get("name"))):
+                    e["F"][k] = clean(fn.get("name"))
+                seen = set()
+                for cp in fn.findall("c:condParam", CAF_NS):
+                    uvs = cp.find("c:values", CAF_NS)
+                    uvs = [] if uvs is None else sorted(uvs.findall("c:unitVal", CAF_NS),
+                                                        key=lambda u: int(u.get("position", "0")))
+                    hx = "".join((u.text or "").strip().upper() for u in uvs)
+                    name = clean(cp.findtext("c:paramName", "", CAF_NS))
+                    if hx and hx not in seen and not placeholder(name):   # first name wins when values share a code
+                        seen.add(hx)
+                        e["V"][k + (hx,)] = name
+    total = sum(merge(cid, found) for cid, found in per.items())
+    print(f"{n} CAFDs, {len(per)} CAFD ids from {folder} -> {PACK_DIR} ({total} rows)")
+
+
 def pack_db(db, sources=("untrimmed", "fwl")):
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     src = "(" + ",".join("?" * len(sources)) + ")"
@@ -188,6 +237,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "pack-dumps" and len(sys.argv) > 2:
         pack_dumps(sys.argv[2])
+    elif cmd == "pack-caf" and len(sys.argv) > 2:
+        pack_caf(sys.argv[2])
     elif cmd == "pack-db" and len(sys.argv) > 2:
         pack_db(sys.argv[2], tuple(sys.argv[3:]) or ("untrimmed", "fwl"))
     elif cmd == "stats":

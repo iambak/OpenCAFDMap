@@ -3,7 +3,7 @@
 Open CAFD Map gets better with every name someone adds. There are three ways to contribute:
 
 - **A few lines in a `names\<ECU>.tsv` file.** Best for names you found yourself, or to fix or fill in anything the untrimmed names lack. These files win over every other source; the format is below.
-- **Untrimmed dumps.** If you have untrimmed CAFD definitions (XML with every function, like the dumps in `definitions\untrimmed\` were made from), run `python ocm\untrimmed.py pack-dumps <folder>`. It merges them into `definitions\untrimmed\<CAFD id>.tsv.gz` by layout and never removes existing names. Open a pull request with the changed `.tsv.gz` files.
+- **Untrimmed dumps.** If you have untrimmed CAFD definitions (XML with every function, like the dumps in `definitions\untrimmed\` were made from), run `python ocm\untrimmed.py pack-dumps <folder>`. For decrypted CAFDs from a psdzdata old enough to still carry its names, run `python ocm\untrimmed.py pack-caf <folder>` instead. Both merge into `definitions\untrimmed\<CAFD id>.tsv.gz` by layout and never remove existing names. Open a pull request with the changed `.tsv.gz` files.
 - **Whole files in `definitions\`**: definition XMLs (`<CafdDefinition>`) or FDL cheat sheets (`<FDL>`) you already have. See [definitions/README.md](definitions/README.md). Their names are merged automatically. A definition XML also covers people whose psdzdata lacks that CAFD version.
 
 ## The format
