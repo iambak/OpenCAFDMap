@@ -7,36 +7,36 @@ import os
 from xml.sax.saxutils import escape
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
-DATA = "definitions 2026.11.13.5"
+DATA = "definitions 2026.11.18.1"
 # (family, ids with BMW names, unique CAFD ids, [(main series, cars, ids with names, CAFD ids), ...])
 GROUPS = [
-    ("G-chassis", 96, 143, [
+    ("G-chassis", 120, 143, [
         ("G029", "Z4", 57, 58),
         ("G042", "2 Series Coupé, M2", 53, 54),
+        ("J029", "Supra", 50, 51),
+        ("G015", "8 Series", 77, 79),
         ("G020", "3/4 Series, i4, M3/M4", 89, 93),
-        ("J029", "Supra", 48, 51),
-        ("G015", "8 Series", 70, 79),
-        ("G001", "X3, X4", 78, 94),
-        ("G008", "iX3", 67, 82),
-        ("G005", "X5, X6, X5 M", 78, 98),
-        ("G007", "X7", 71, 92),
-        ("G011", "7 Series (G11/G12)", 80, 108),
-        ("G038", "5 Series long (China)", 62, 84),
-        ("G030", "5/6 Series, M5", 73, 99),
+        ("G001", "X3, X4", 89, 94),
+        ("G011", "7 Series (G11/G12)", 102, 108),
+        ("G030", "5/6 Series, M5", 93, 99),
+        ("G038", "5 Series long (China)", 78, 84),
+        ("G008", "iX3", 76, 82),
+        ("G005", "X5, X6, X5 M", 88, 98),
+        ("G007", "X7", 81, 92),
         ("G060", "5 Series (G60)", 4, 7),
         ("G070", "7 Series (G70)", 3, 7),
         ("U006", "2 Series Active Tourer (U06)", 3, 8),
     ]),
-    ("F-chassis", 131, 254, [
+    ("F-chassis", 240, 254, [
+        ("F001", "7 Series F01/F02", 130, 130),
+        ("F010", "5/6 Series F10-F13, M5/M6", 127, 127),
+        ("F025", "X3/X4 F25/F26", 87, 87),
         ("F030", "3/4 Series F30-F36, M3/M4", 94, 94),
-        ("F020", "1/2 Series F20-F23, M2", 76, 80),
-        ("F040", "1 Series F40, 2 Gran Coupé", 44, 54),
-        ("F015", "X5/X6 F15/F16, X5 M/X6 M", 60, 87),
-        ("F025", "X3/X4 F25/F26", 57, 87),
-        ("F045", "2 Active/Gran Tourer", 33, 56),
-        ("F056", "MINI F54-F60", 34, 64),
-        ("F010", "5/6 Series F10-F13, M5/M6", 64, 127),
-        ("F001", "7 Series F01/F02", 61, 130),
+        ("F015", "X5/X6 F15/F16, X5 M/X6 M", 86, 87),
+        ("F020", "1/2 Series F20-F23, M2", 79, 80),
+        ("F045", "2 Active/Gran Tourer", 52, 56),
+        ("F056", "MINI F54-F60", 57, 64),
+        ("F040", "1 Series F40, 2 Gran Coupé", 48, 54),
     ]),
 ]
 
@@ -142,7 +142,7 @@ def svg(t):
                  f'{pct}%<tspan font-weight="400" fill="{c["muted"]}">  {n} of {tot}</tspan></text>')
     fy = y1 + 38
     o.append(f'<text x="{PAD}" y="{fy}" font-size="11.5" fill="{c["ink2"]}">Bars count CAFD ids. Across all G020 and '
-             f'F030 CAFD versions, about 89% of functions carry verified BMW names.</text>')
+             f'F030 CAFD versions, about 92% of functions carry verified BMW names.</text>')
     o.append(f'<text x="{PAD}" y="{fy + 16}" font-size="11.5" fill="{c["ink2"]}">Family totals count each CAFD id once. '
              f'G60, G70 and U06 list only 7-8 CAFD ids in psdzdata; G045 and F070 (2-4 ids) are left out.</text>')
     o.append(f'<text x="{PAD}" y="{fy + 32}" font-size="11.5" fill="{c["muted"]}">Percentages: verified share. '
