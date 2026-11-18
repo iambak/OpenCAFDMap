@@ -26,6 +26,8 @@ Everything above ships with the repo, so a fresh install sees every shared name.
   <img src="docs/images/coverage-light.svg" alt="Coding names by chassis: every CAFD is named, with verified BMW names where they exist and dynamically calculated names for the rest. Verified share of CAFD ids: G-chassis 84% (G029 Z4 98%, G042 2 Series Coupé 98%, J029 Supra 98%, G015 8 Series 97%, G020 3/4 Series 96%, G001 X3/X4 95%, G011 7 Series 94%, G030 5/6 Series 94%, G038 5 Series long 93%, G008 iX3 93%, G005 X5/X6 90%, G007 X7 88%, G060 5 Series 57%, G070 7 Series 43%, U006 2 Series Active Tourer 38%); F-chassis 94% (F001 7 Series 100%, F010 5/6 Series 100%, F025 X3/X4 100%, F030 3/4 Series 100%, F015 X5/X6 99%, F020 1/2 Series 99%, F045 2 Active/Gran Tourer 93%, F056 MINI 89%, F040 1 Series 89%)" width="760">
 </picture>
 
+Not in the chart: BMW i (I001), Rolls-Royce (RR01/RR11/RR21), Motorrad (K-series) and the other ranges in psdzdata, where 151 of 193 CAFD ids (78%) have verified BMW names.
+
 OpenLauncher works with any main series: set it in OpenLauncher. For G020 and F030, about 92% of functions across every CAFD version carry BMW's own verified names. OpenLauncher dynamically calculates the rest: functions are named from their group, byte and mask, and values are labelled with their coding rules. Untrimmed dumps of CAFDs your series doesn't share with those raise its bar the most ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ### Before / after
