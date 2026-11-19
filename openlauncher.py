@@ -510,12 +510,14 @@ class OpenLauncher(tk.Tk):
             self._set_stat("defs", f"{n_defs:,} CAFDs", "Others built on demand", "ok")
         else:
             self._set_stat("defs", "On demand", "Built as you open CAFDs", "ok")
-        # the full series database is only needed by the command-line tools (the Backup Editor builds its own)
-        if os.path.exists(P.db):
-            n_cache = len(glob.glob(os.path.join(P.cache, "cafd_*.xml.gz")))
-            self._set_stat("db", "Ready", f"{n_cache:,} CAFD versions" if n_cache else "Database built", "ok")
+        # the Backup Editor builds its own definitions from your backups' CAFD versions (bc_tool.ensure_defs)
+        bc_cache = os.path.join(P.workspace, "cafd_cache", "backups")
+        if os.path.exists(os.path.join(P.workspace, "cafd_defs_backups.sqlite")):
+            n_cache = len(glob.glob(os.path.join(bc_cache, "cafd_*.xml.gz")))
+            self._set_stat("db", "Ready", f"{n_cache:,} CAFD versions from your backups" if n_cache
+                           else "Definitions built", "ok")
         else:
-            self._set_stat("db", "Not built", "Not needed", "muted")
+            self._set_stat("db", "On demand", "Built when you open it", "ok")
         self.esys_info.set(f"E-Sys {ver}\nmain series {self.cfg.get('series', '')}" if esys_ok else "")
         self.launch_sub.set(f"Launch E-Sys {ver} or BimmerCode Backup Editor" if ver
                             else "Launch E-Sys or BimmerCode Backup Editor")
