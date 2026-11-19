@@ -1,0 +1,2 @@
+DTC fault texts (built by ocm/dtc_tables.py)
+ISTA database 4.50.40

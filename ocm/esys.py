@@ -256,7 +256,7 @@ def prepare(cfg=None, out=print):
 LAUNCH_OPTIONS = [  # key, label, help
     ("launch_labels", "Name Injection", "Names and value labels in the CAF / FDL trees and the vehicle profile"),
     ("launch_on_demand", "Build labels on demand", "New CAFD versions are labelled in the background"),
-    ("launch_tools", "Additional Utilities", "Compare NCD, Cheat Sheet and FA Helper in E-Sys's navigation bar"),
+    ("launch_tools", "Additional Utilities", "Compare NCD, Cheat Sheet, FA Helper and DTC in E-Sys's navigation bar"),
     ("launch_backup", "FA / SVT auto-backup", "Copies every FA / SVT read from the car to FA\\FABak and SVT\\SVTBak"),
 ]
 OPTION_LABELS = {k: label for k, label, _ in LAUNCH_OPTIONS}

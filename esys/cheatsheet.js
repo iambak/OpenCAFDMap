@@ -500,11 +500,24 @@
   function open() {
     var ctl = Java.type("com.bmw.esys.gui.control.EsysController");
     var inst = h.field(null, h.cls("com.bmw.esys.gui.control.EsysController"), "instance").get(null);
-    if (String(inst.getCurrentModule()) !== "FDLEditor") {
-      ctl.openModule("FDLEditor", "module.section.editors", new java.util.HashMap());   // E-Sys's own FDL Editor module
-    }
     var frame = h.esysFrame();
     var curField = h.field(null, h.cls("com.bmw.esys.gui.control.EsysFrame"), "currentView");
+    // Is E-Sys's FDL editor view (or our split around it) what's on screen? E-Sys's "current module" isn't enough: one
+    // of our tool views (FA Helper, DTC, ...) can be showing while E-Sys still has FDLEditor as its module.
+    var fdl = null;
+    try { var mc = inst.getCachedModules().get("FDLEditor"); fdl = mc ? mc.getView() : null; } catch (eM) {}
+    var shown = curField.get(frame);
+    if (shown !== split && (!fdl || shown !== fdl)) {
+      if (fdl && String(inst.getCurrentModule()) === "FDLEditor") {
+        // E-Sys is still in its FDL Editor, only covered by one of our views: put its view back as it is (re-opening
+        // the module would exit it first and could drop the NCD that's open in it)
+        Java.type("com.bmw.esys.gui.AbstractView").replace(shown, fdl);
+        curField.set(frame, fdl);
+        fdl.setVisible(true);
+      } else {
+        ctl.openModule("FDLEditor", "module.section.editors", new java.util.HashMap());   // E-Sys's own FDL Editor module
+      }
+    }
     var view = curField.get(frame);
     if (!ui) {
       var pane = buildPane();
@@ -553,5 +566,5 @@
     }
   }
 
-  return { open: open, tick: tick };
+  return { open: open, tick: tick, view: function () { return split; } };   // view: for the section's selection mark
 });

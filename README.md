@@ -154,6 +154,12 @@ E-Sys started by OpenLauncher has an **OpenLauncher** section at the bottom of i
 - **Apply to E-Sys FA** hands the edited FA to E-Sys's FA editor, which marks it "updated, not saved". Saving it and writing it to the car stay in E-Sys, as usual. **Save FA as...** writes it to a file instead.
 - **Data:** everything it needs ships with Open CAFD Map in `data\fa\` (8,456 type keys, built from ISTA and KIS) and updates through **Check for updates**, so it doesn't depend on how old your psdzdata is. The CAFD check uses your own psdzdata through E-Sys's PsdZ.
 
+**DTC.** Read the car's faults, and clear them after coding. E-Sys doesn't clear faults after **Code**; BimmerCode does, and this does the same.
+- **Read faults** finds every module that answers and lists its faults: module, address, fault code, status (present, stored or pending) and the fault text. Modules without faults are listed too.
+- **Clear all faults...** asks first, then sends one "clear all faults" request to every module (`14 FF FF FF`), the same request BimmerCode sends after coding, and reads the faults again. Faults that are still there come back. **Also clear the info memory** (off by default) clears BMW's info memory too.
+- **Connection:** it uses the gateway E-Sys is connected to (Open Connection first) and talks to the car next to E-Sys over ENET. Coding data, the FA and the SVT aren't touched.
+- **Data:** fault texts (English and German, by module address and fault code) ship with Open CAFD Map in `data\dtc\`, built from ISTA, and update through **Check for updates**. Where ISTA has several texts for one code, the most common is shown and the others are in its tooltip.
+
 **FA / SVT auto-backup.** Every FA and SVT that E-Sys reads from the vehicle is saved as a copy in E-Sys's data folder (`Path.Home`, for example `H:\Data`), with no button to press:
 - **FA:** `FA\FABak\<series>_<last 7 of VIN>.xml`; **SVT:** `SVT\SVTBak\<series>_<last 7 of VIN>.xml`. The files are E-Sys's own FA / SVT XML, so **Load** opens them like any other.
 - **Covered:** Vehicle Order **Read** and SVT Actual **Read (VCM)** / **Read (ECU)** in Coding, and the FA and SVT editors. Files you **Load** aren't copied, and neither is the calculated SVT target.
