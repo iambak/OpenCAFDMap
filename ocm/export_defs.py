@@ -120,12 +120,12 @@ def export_one(con, cpk, cid, ver, ecu, out_dir, fp):
 
 def backup_versions(folders):
     """(cafd_id, version) of every CAFD listed in BimmerCode backups (your car's actual versions)."""
-    from bc_tool import Cod
+    from bc_tool import backup_files, open_backup
     out = set()
     for d in folders:
-        for p in glob.glob(os.path.join(d, "*.cod")) if d and os.path.isdir(d) else []:
+        for p in backup_files(d) if d and os.path.isdir(d) else []:
             try:
-                out.update(Cod(p).cafds)
+                out.update(open_backup(p).cafds)
             except Exception:  # noqa: BLE001 - not a readable backup: skip
                 pass
     return out

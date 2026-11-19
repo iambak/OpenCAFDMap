@@ -28,7 +28,7 @@ DEFAULTS = {
     "export_all_versions": False,  # False: newest 3 versions per CAFD + versions found in your BimmerCode backups
     "cheat_sheets_dir": "",      # optional: folder of FDL cheat-sheet XMLs to import (kept local, never committed)
     "ista_db": "",               # optional: decrypted ISTA DiagDocDb sqlite (SA option titles in labels)
-    "bimmercode_backups_dir": "",  # optional: folder with BimmerCode .cod backups for the backup editor
+    "bimmercode_backups_dir": "",  # optional: folder with BimmerCode .cod / .dat backups for the backup editor
 }
 
 

@@ -2,11 +2,14 @@
 
 Prepare coding changes as **new** BimmerCode backups, then restore them from your phone with BimmerCode. Your real backups are never touched.
 
-This works with BimmerCode **iOS** backups (`.cod`, `<ECU>-<VIN>-<unix time>.cod`). Android's backup format isn't supported yet.
+This works with BimmerCode backups from **iOS** (`<ECU>-<VIN>-<unix time>.cod`) and **Android** (`<VIN>_<ECU>.dat`).
+Android backups don't store the ECU's diagnostic address, so the list shows `-` there.
 
 ## Setup
 1. In OpenLauncher, set **BimmerCode backups** to the folder where you copied BimmerCode's backups from the phone, then press **Save settings**.
-2. Build the definitions, if you haven't yet.
+2. Set the E-Sys folder in OpenLauncher, if you haven't yet. You don't need to build the definitions: the editor
+   decrypts only the CAFD versions in your backups from your psdzdata and builds its own definitions, usually in
+   under a minute the first time and only again when your backups or the shipped names change.
 3. Open **BimmerCode Backup Editor**, then press **Import new backups from source folder**. This copies them into `workspace\bimmercode\`:
 
 ```
@@ -24,14 +27,19 @@ out\         new backups made by the editor (+ a .txt log next to each)
 3. Double-click a value (or press "Stage selected value") to stage it.
    - A custom hex value needs "allow custom". It must have exactly the parameter's byte length; it's never padded.
    - Staged rows turn yellow.
-4. Add a note, then press **Write new backup**. The new `.cod` goes to `out\` and opens, so you can check it or stage more on top of it.
+4. Add a note, then press **Write new backup**. The new backup goes to `out\` and opens, so you can check it or stage more on top of it.
 
 Ctrl-click two backups and press **Diff** to see exactly which parameters differ.
 
-New files are named like BimmerCode's (`<ECU>-<VIN>-<current unix time>.cod`), so they show up as the newest backup for that ECU. Copy them to BimmerCode's backup folder on the phone and restore them in BimmerCode like any backup.
+New files are named like BimmerCode's, so you can copy them to BimmerCode's backup folder on the phone and restore them
+in BimmerCode like any backup:
+- **iOS:** `<ECU>-<VIN>-<current unix time>.cod`, so they show up as the newest backup for that ECU.
+- **Android:** the same name as the source (`<VIN>_<ECU>.dat`), in a folder per edit run (`out\<date>-<time>\`).
+  The name has no date, so copying it back replaces the backup with the same name on the phone: keep a copy of the
+  original.
 
 ## What the editor guarantees
-- The new `.cod` is a byte copy of the source backup with **only the edited coding bytes changed**: same size, same plist structure, VIN, ECU and CAFD ids. Every write is re-read and checked, and discarded if anything else changed.
+- The new backup is a byte copy of the source with **only the edited coding bytes changed**: same size, same structure, VIN, ECU and CAFD ids. Every write is re-read and checked, and discarded if anything else changed.
 - Bit fields are edited bit-exactly (other bits in the same byte are kept).
 - Multi-CAFD ECUs (BDC, ACSM, ...) are handled: every CAFD listed in the backup is used.
 - SYSTEM datagroups (the NCD signature) can't be edited.

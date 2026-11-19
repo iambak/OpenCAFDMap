@@ -37,7 +37,7 @@ The same BDC NCD (CAFD 00007083) in E-Sys's FDL-Editor, first in stock E-Sys, th
 |---|---|
 | ![Stock E-Sys: every group, function and value is "."](docs/images/before.png) | ![With Open CAFD Map: groups, functions and values are named](docs/images/after.png) |
 
-It also includes a **BimmerCode Backup Editor**: edit parameters inside BimmerCode iOS backups and write them out as new backups to restore from the phone.
+It also includes a **BimmerCode Backup Editor**: edit parameters inside BimmerCode backups (iOS and Android) and write them out as new backups to restore from the phone.
 
 > Open CAFD Map is not affiliated with BMW. Contributed files in `definitions\` come from their contributors. Coding a car is at your own risk.
 
@@ -63,7 +63,7 @@ It also includes a **BimmerCode Backup Editor**: edit parameters inside BimmerCo
 3. Press **Start E-Sys with Open CAFD Map**, connect or open your coding data as usual, and open a CAFD: the tree shows names and labels. No build needed.
    - The first start reads your psdzdata's FA→FP mapping once (about 20 seconds) so option codes like `SA5AC` show up.
    - A CAFD opened for the first time shows BMW's untrimmed names straight away. Within a few seconds its full definition is built in the background (every shared name, value labels from the coding rules, your `my_names.tsv`) and the tree updates by itself. Later opens are instant.
-4. Optional: press **Build definitions** to decrypt and index all of your psdzdata's CAFDs for that series (it can take a while). You need it for the **BimmerCode Backup Editor** and the command-line search tools; E-Sys doesn't.
+4. You don't need **Build definitions**: E-Sys builds each CAFD's definition when you open it, and the **BimmerCode Backup Editor** builds definitions for just the CAFDs in your backups (usually under a minute). A full build (half an hour or more) is only for the command-line search tools.
 
 Optional settings:
 

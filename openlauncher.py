@@ -30,7 +30,7 @@ FIELDS = [  # key, label, kind, help
     ("esys_ui_scale", "E-Sys UI scale", "uiscale", "try 1 if E-Sys's window gets drawn over itself on a scaled display"),
     ("esys_language", "E-Sys language", "esyslang", "E-Sys's menus and messages, for E-Sys started by OpenLauncher"),
     ("workspace", "Workspace", "dir", "DB, decrypted cache, definitions, logs (never committed)"),
-    ("bimmercode_backups_dir", "BimmerCode backups", "dir", "optional: folder with your .cod backups"),
+    ("bimmercode_backups_dir", "BimmerCode backups", "dir", "optional: folder with your .cod (iOS) or .dat (Android) backups"),
     ("cheat_sheets_dir", "Cheat sheets", "dir", "optional: FDL cheat-sheet XMLs (imported locally only)"),
     ("ista_db", "ISTA DiagDocDb", "file", "optional: decrypted DiagDocDb .sqlite (option-code titles)"),
 ]
@@ -239,7 +239,7 @@ class OpenLauncher(tk.Tk):
         d.outer.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
         ttk.Label(d, text="Definitions", style="CardH.TLabel").pack(anchor="w", pady=(0, 8))
         self.btns = []
-        for text, step, tip in (("Build definitions", "build", "Optional for E-Sys, Required for BC Backup Editor"),
+        for text, step, tip in (("Build definitions", "build", "Not needed: E-Sys and the BC Backup Editor build on demand"),
                                 ("Apply names", "names", "After editing names"),
                                 ("Check contributions", "check", "Before you contribute")):
             r = ttk.Frame(d, style="Card.TFrame")
@@ -510,12 +510,12 @@ class OpenLauncher(tk.Tk):
             self._set_stat("defs", f"{n_defs:,} CAFDs", "Others built on demand", "ok")
         else:
             self._set_stat("defs", "On demand", "Built as you open CAFDs", "ok")
-        # the definition database is only needed by the BimmerCode Backup Editor (and the command-line tools)
+        # the full series database is only needed by the command-line tools (the Backup Editor builds its own)
         if os.path.exists(P.db):
             n_cache = len(glob.glob(os.path.join(P.cache, "cafd_*.xml.gz")))
             self._set_stat("db", "Ready", f"{n_cache:,} CAFD versions" if n_cache else "Database built", "ok")
         else:
-            self._set_stat("db", "Not built", "Optional: Build definitions", "muted")
+            self._set_stat("db", "Not built", "Not needed", "muted")
         self.esys_info.set(f"E-Sys {ver}\nmain series {self.cfg.get('series', '')}" if esys_ok else "")
         self.launch_sub.set(f"Launch E-Sys {ver} or BimmerCode Backup Editor" if ver
                             else "Launch E-Sys or BimmerCode Backup Editor")
@@ -797,13 +797,18 @@ class OpenLauncher(tk.Tk):
     def _build_question(self):
         _, titles = config.ista_db_status(self.cfg.get("ista_db"))
         on_demand = esys.option(self.cfg, "launch_labels") and esys.option(self.cfg, "launch_on_demand")
-        first = ("E-Sys doesn't need this: OpenLauncher names each CAFD the first time you open it in E-Sys."
-                 if on_demand else
-                 "Build labels on demand is off in Launch options, so E-Sys only shows names for CAFDs that have "
-                 "been built.")
-        return (f"{first}\n\nBuild definitions is needed for the BimmerCode Backup Editor and the command-line tools. "
-                "The first build reads every CAFD in your psdzdata and can take half an hour or more.\n\n"
-                f"Option titles: {titles}.\n\nBuild now?")
+        head, esys_line = (("You don't need a full build anymore.",
+                            "\u2022 E-Sys: OpenLauncher names each CAFD the first time you open it.")
+                           if on_demand else
+                           ("The Backup Editor doesn't need a full build anymore.",
+                            "\u2022 E-Sys: Build labels on demand is off in Launch options, so E-Sys only shows names "
+                            "for CAFDs a full build has built. Turn it on and you don't need this."))
+        return (f"{head}\n\n{esys_line}\n"
+                "• BimmerCode Backup Editor: when you open it or import backups, it builds definitions for only "
+                "the CAFDs in your backups, usually in under a minute.\n\n"
+                "A full build reads every CAFD in your psdzdata for one main series and can take half an hour or "
+                "more. It's only needed for the command-line search tools.\n\n"
+                f"Option titles: {titles}.\n\nRun a full build anyway?")
 
     def run_step(self, step):
         if self.busy:
@@ -887,9 +892,6 @@ class OpenLauncher(tk.Tk):
 
     def start_bc(self):
         self.save(quiet=True)
-        if not os.path.exists(config.paths().db):
-            messagebox.showerror("BimmerCode Backup Editor", "Build the definitions first.")
-            return
         subprocess.Popen([pythonw(), os.path.join(ROOT, "ocm", "bc_gui.py")], cwd=ROOT)
         self.write("BimmerCode Backup Editor started.")
 

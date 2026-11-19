@@ -1,0 +1,23 @@
+name: QA
+# Regression tests (tests/): BimmerCode backups (iOS .cod, Android .dat) and the definitions the Backup Editor builds
+# from them. Synthetic fixtures only: no E-Sys, psdzdata or real backup needed.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["ocm/**", "esys/**", "tests/**", "openlauncher.py", "names/**", "definitions/**", "data/**",
+            ".github/workflows/qa.yml"]
+  push:
+    paths: ["ocm/**", "esys/**", "tests/**", "openlauncher.py", "names/**", "definitions/**", "data/**",
+            ".github/workflows/qa.yml"]
+jobs:
+  tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile every Python file
+        run: python -W error::SyntaxWarning -m compileall -q ocm tests openlauncher.py
+      - name: Regression tests
+        run: python -m unittest discover -s tests -v

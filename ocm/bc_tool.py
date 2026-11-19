@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-r"""Edit BimmerCode backups (.cod) parameter-by-parameter and repackage them as NEW backups.
+r"""Edit BimmerCode backups (iOS .cod, Android .dat) parameter-by-parameter and repackage them as NEW backups.
 
 Workspace: <Open CAFD Map workspace>/bimmercode (set paths in OpenLauncher)
   originals\   copies of your BimmerCode backups. Never modified; `init` copies, `check` verifies.
   decoded\     readable dump per backup (.txt) + raw blocks (.json)
   edits\       edit files for `apply` (see edits\EXAMPLE.tsv)
-  out\         new .cod files, one per edit run, ready to copy back to BimmerCode
+  out\         new backups, one per edit run, ready to copy back to BimmerCode (Android: out\<time>\<file>.dat,
+               same file name as the source)
 
   python bc_tool.py init  [backup folder]       copy backups into originals\ and decode them
   python bc_tool.py list                        backups: ECU, CAFD, date, file
@@ -37,6 +38,8 @@ import shutil
 import sqlite3
 import sys
 
+import bc_android
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import config  # noqa: E402
@@ -45,7 +48,7 @@ from defdb import extract  # noqa: E402
 _P = config.paths()
 WS = _P.bc                                           # workspace\bimmercode
 SRC = _P.cfg.get("bimmercode_backups_dir") or ""     # where your BimmerCode backups are copied from
-DB = _P.db
+DB = os.path.join(_P.workspace, "cafd_defs_backups.sqlite")   # built for your backups, see ensure_defs()
 ORIG, DEC, OUT, EDITS = (os.path.join(WS, d) for d in ("originals", "decoded", "out", "edits"))
 FN_RE = re.compile(r"^(?P<ecu>[0-9A-F]+)-(?P<vin>[A-Z0-9]{17})-(?P<ts>\d{9,})(?:-(?P<tag>[^.]*))?\.cod$", re.I)
 
@@ -53,6 +56,7 @@ FN_RE = re.compile(r"^(?P<ecu>[0-9A-F]+)-(?P<vin>[A-Z0-9]{17})-(?P<ts>\d{9,})(?:
 # ------------------------------------------------------------------ .cod model
 class Cod:
     """NSKeyedArchiver plist of a BimmerCode CodingSession; keeps the raw plist for faithful rewriting."""
+    platform = "iOS"
 
     def __init__(self, path):
         self.path = path
@@ -168,6 +172,143 @@ def bplist_data_locations(raw):
     return out
 
 
+def open_backup(path):
+    """iOS .cod or Android .dat."""
+    return bc_android.Dat(path) if path.lower().endswith(".dat") else Cod(path)
+
+
+def backup_files(folder, out=False):
+    """Backups in a folder; out\\ also holds Android ones in a subfolder per edit run."""
+    pats = ["*.cod", "*.dat"] + ([os.path.join("*", "*.dat")] if out else [])
+    return sorted(p for pat in pats for p in glob.glob(os.path.join(folder, pat)))
+
+
+def diag_txt(c):
+    return "-" if c.diag is None else f"0x{c.diag:02X}"
+
+
+def is_out(c):
+    return os.path.abspath(c.path).startswith(os.path.abspath(OUT) + os.sep)
+
+
+# ------------------------------------------------------------------ definitions for your backups
+# The editor builds its own small definition DB from exactly the CAFD versions in your backups: those are decrypted
+# from your psdzdata (seconds), then build_defdb adds every shipped name. No full series build needed.
+BDB = DB
+BCACHE = os.path.join(_P.workspace, "cafd_cache", "backups")
+STAMP = BDB + ".json"
+# what the DB is built from besides the decrypted CAFDs: a newer file here means the DB is rebuilt (5 s)
+INPUTS = [config.NAMES, config.CONTRIB, config.DATA, os.path.join(HERE, "build_defdb.py"), os.path.join(HERE, "rules.py"),
+          _P.my_names, _P.cheat_names]
+
+
+def needed_versions():
+    """(cafd_id, version) of every CAFD the backups in originals\\ and out\\ list."""
+    out = set()
+    for p in backup_files(ORIG) + backup_files(OUT, out=True):
+        try:
+            out.update(open_backup(p).cafds)
+        except Exception:  # noqa: BLE001 - not a readable backup: skip
+            pass
+    return out
+
+
+def cached_versions():
+    out = set()
+    for p in glob.glob(os.path.join(BCACHE, "cafd_*_*_*_*.xml.gz")):
+        m = re.match(r"cafd_([0-9A-F]{8})_(\d{3}_\d{3}_\d{3})\.xml\.gz$", os.path.basename(p), re.I)
+        if m:
+            out.add((m.group(1).upper(), m.group(2)))
+    return out
+
+
+def _newest(paths):
+    t = 0
+    for p in paths:
+        if os.path.isdir(p):
+            for d, _sub, files in os.walk(p):
+                t = max([t] + [os.path.getmtime(os.path.join(d, f)) for f in files])
+        elif os.path.exists(p):
+            t = max(t, os.path.getmtime(p))
+    return int(t)
+
+
+def _stamp(versions):
+    cfg = _P.cfg
+    return {"inputs": _newest(INPUTS), "versions": sorted(f"{c}_{v}" for c, v in versions),
+            "ista_db": cfg.get("ista_db") or "", "context": cfg.get("context") or "", "fafp": _fafp() or ""}
+
+
+def _fafp():
+    """FA->FP mapping (option-code labels) of your configured series, if a build or E-Sys run decrypted it."""
+    return _P.fafp if os.path.exists(_P.fafp) else None
+
+
+def defs_status():
+    """(missing CAFD versions to decrypt, versions not in your psdzdata, DB needs a rebuild)."""
+    need = needed_versions()
+    have = cached_versions()
+    root = os.path.join(_P.psdzdata, "swe", "cafd") if _P.psdzdata else ""
+    missing, absent = set(), set()
+    for c, v in need - have:
+        (missing if root and os.path.exists(os.path.join(root, f"cafd_{c.lower()}.caf.{v}")) else absent).add((c, v))
+    try:
+        old = json.load(open(STAMP, encoding="utf-8"))
+    except (OSError, ValueError):
+        old = None
+    stale = bool(missing) or not os.path.exists(BDB) or old != _stamp(have)
+    return missing, absent, stale
+
+
+def ensure_defs(out=print):
+    """Decrypt the CAFD versions your backups need (only those not decrypted yet) and rebuild the editor's DB
+    when anything it's built from changed. Returns the versions your psdzdata doesn't have."""
+    missing, absent, stale = defs_status()
+    if not stale:
+        return absent
+    if not missing and not cached_versions():
+        if absent:
+            sys.exit("None of your backups' CAFDs are in your psdzdata: " + ", ".join(f"{c}_{v}" for c, v in sorted(absent)))
+        return absent                   # no backups imported yet: nothing to build
+    if missing:
+        import esys  # noqa: E402 - needs E-Sys's PsdZ; only imported when something has to be decrypted
+        out(f"Decrypting {len(missing)} CAFD version(s) from your psdzdata ...")
+        os.makedirs(BCACHE, exist_ok=True)
+        os.makedirs(_P.logs, exist_ok=True)
+        files = ",".join(sorted(f"{c.lower()}.caf.{v}" for c, v in missing))
+        try:
+            rc = esys.run_script(os.path.join(config.ESYS_SCRIPTS, "decrypt.js"), [BCACHE, "ALL", "", 0, files],
+                                 cfg=_P.cfg, log=os.path.join(_P.logs, "decrypt_backups.log"))
+        except SystemExit as e:
+            sys.exit(f"Can't decrypt your backups' CAFDs: {e}")
+        if rc != 0:
+            sys.exit(f"decrypt failed (exit {rc}); see {os.path.join(_P.logs, 'decrypt_backups.log')}")
+    have = cached_versions()
+    if not have:
+        sys.exit("None of your backups' CAFDs are in your psdzdata" + (
+            ": " + ", ".join(f"{c}_{v}" for c, v in sorted(absent)) if absent else "."))
+    out(f"Building definitions for {len(have)} CAFD version(s) ...")
+    args = [sys.executable, os.path.join(HERE, "build_defdb.py"), "--cache", BCACHE, "--out", BDB + ".tmp",
+            "--series", _P.cfg["series"], "--fafp", _fafp() or ""]
+    import subprocess  # noqa: E402
+    if os.path.exists(BDB + ".tmp"):
+        os.remove(BDB + ".tmp")
+    r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=dict(os.environ, PYTHONIOENCODING="utf-8"),
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if r.returncode != 0:
+        sys.exit("building the definitions failed:\n" + (r.stdout + r.stderr)[-1500:])
+    try:
+        os.replace(BDB + ".tmp", BDB)
+    except PermissionError:
+        os.remove(BDB + ".tmp")
+        sys.exit(f"{BDB} is in use (another Backup Editor window?): close it and try again")
+    with open(STAMP, "w", encoding="utf-8") as f:
+        json.dump(_stamp(have), f)
+    out("Definitions ready.")
+    return absent
+
+
 # ------------------------------------------------------------------ DB helpers
 def db():
     return sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
@@ -205,8 +346,10 @@ def label_for(con, fpk, hx):
 
 
 def ecu_name(con, cod):
-    r = con.execute("SELECT ecu FROM cafd WHERE cafd_id=? LIMIT 1", (cod.cafd,)).fetchone()
-    return (r[0] if r and r[0] else f"diag_0x{cod.diag:02X}").split(",")[0]
+    r = con.execute("SELECT ecu FROM cafd WHERE cafd_id=? LIMIT 1", (cod.cafd,)).fetchone() if con else None
+    if r and r[0]:
+        return r[0].split(",")[0]
+    return f"diag_0x{cod.diag:02X}" if cod.diag is not None else f"ECU {cod.ecu_id}"
 
 
 def insert(buf, f, hx):
@@ -228,7 +371,7 @@ def insert(buf, f, hx):
 
 # ------------------------------------------------------------------ resolving user input
 def all_cods():
-    return [Cod(p) for p in sorted(glob.glob(os.path.join(ORIG, "*.cod")) + glob.glob(os.path.join(OUT, "*.cod")))]
+    return [open_backup(p) for p in backup_files(ORIG) + backup_files(OUT, out=True)]
 
 
 def find_cod(spec, con=None):
@@ -236,20 +379,20 @@ def find_cod(spec, con=None):
         key = spec.split(":", 1)[1].upper()
         con = con or db()
         cand = []
-        for c in (Cod(p) for p in glob.glob(os.path.join(ORIG, "*.cod"))):
-            names = {ecu_name(con, c).upper(), f"0X{c.diag:02X}", c.ecu_id.upper(), c.cafd}
+        for c in (open_backup(p) for p in backup_files(ORIG)):
+            names = {ecu_name(con, c).upper(), diag_txt(c).upper(), c.ecu_id.upper(), c.cafd}
             if key in names or any(n.startswith(key) for n in names):
                 cand.append(c)
         if not cand:
             sys.exit(f"no backup for {spec}")
         return max(cand, key=lambda c: c.ts)
     if os.path.isfile(spec):
-        return Cod(spec)
-    hits = [p for p in glob.glob(os.path.join(ORIG, "*.cod")) + glob.glob(os.path.join(OUT, "*.cod"))
+        return open_backup(spec)
+    hits = [p for p in backup_files(ORIG) + backup_files(OUT, out=True)
             if spec.lower() in os.path.basename(p).lower()]
     if len(hits) != 1:
         sys.exit(f"'{spec}' matches {len(hits)} backups" + (": " + ", ".join(map(os.path.basename, hits[:8])) if hits else ""))
-    return Cod(hits[0])
+    return open_backup(hits[0])
 
 
 def find_func(fs, spec):
@@ -327,11 +470,12 @@ def decode_one(con, cod, folder=DEC):
     blocks = cod.blocks
     base = os.path.splitext(os.path.basename(cod.path))[0]
     with open(os.path.join(folder, base + ".json"), "w", encoding="utf-8") as fj:
-        json.dump(dict(file=os.path.basename(cod.path), vin=cod.vin, ecu=ecu_name(con, cod), diag=f"0x{cod.diag:02X}",
+        json.dump(dict(file=os.path.basename(cod.path), platform=cod.platform, vin=cod.vin, ecu=ecu_name(con, cod),
+                       diag=diag_txt(cod),
                        cafd=cod.cafd, version=cod.ver, cafds=[f"{c}_{v}" for c, v in cod.cafds], date=cod.when(),
                        blocks={g: b.hex().upper() for g, b in blocks.items()}), fj, indent=1)
     with open(os.path.join(folder, base + ".txt"), "w", encoding="utf-8") as ft:
-        ft.write(f"{ecu_name(con, cod)} diag 0x{cod.diag:02X}  {cod.when()}  {cod.vin}\n"
+        ft.write(f"{ecu_name(con, cod)} diag {diag_txt(cod)}  {cod.when()}  {cod.vin}  ({cod.platform})\n"
                  f"CAFDs: {', '.join(f'{c}_{v}' for c, v in cod.cafds)}\n")
         grp = None
         for f in fs:
@@ -346,30 +490,34 @@ def decode_one(con, cod, folder=DEC):
 
 
 def cmd_init(a):
-    con = db()
     src = a.folder or SRC
     if not src or not os.path.isdir(src):
         sys.exit("BimmerCode backups folder not set or missing: set it in OpenLauncher (or pass a folder)")
     n = 0
-    for p in glob.glob(os.path.join(src, "*.cod")):
+    for p in backup_files(src):
         dst = os.path.join(ORIG, os.path.basename(p))
         if not os.path.exists(dst):
             shutil.copy2(p, dst)
             n += 1
     print(f"{n} new backups copied to {ORIG}")
-    for p in sorted(glob.glob(os.path.join(ORIG, "*.cod"))):
+    absent = ensure_defs()
+    if absent:
+        print("not in your psdzdata (update psdzdata to edit these): " + ", ".join(f"{c}_{v}" for c, v in sorted(absent)))
+    con = db()
+    for p in backup_files(ORIG):
         try:
-            decode_one(con, Cod(p))
-        except SystemExit as e:
+            decode_one(con, open_backup(p))
+        except (SystemExit, ValueError) as e:
             print(f"  skip {os.path.basename(p)}: {e}")
+    con.close()
     print(f"decoded into {DEC}")
 
 
 def cmd_list(a):
     con = db()
-    for c in sorted(all_cods(), key=lambda c: (c.diag, c.ts)):
-        where = "out" if os.path.dirname(c.path) == OUT else "orig"
-        print(f"{where:4} 0x{c.diag:02X} {ecu_name(con, c):<16} CAFD_{c.cafd}_{c.ver}  {c.when()}  {os.path.basename(c.path)}")
+    for c in sorted(all_cods(), key=lambda c: (c.diag if c.diag is not None else 999, c.ts)):
+        where = "out" if is_out(c) else "orig"
+        print(f"{where:4} {diag_txt(c):4} {ecu_name(con, c):<16} CAFD_{c.cafd}_{c.ver}  {c.when()}  {os.path.basename(c.path)}")
 
 
 def cmd_show(a):
@@ -377,7 +525,7 @@ def cmd_show(a):
     cod = find_cod(a.cod, con)
     fs = functions(con, cod)
     blocks = cod.blocks
-    print(f"{ecu_name(con, cod)} 0x{cod.diag:02X} CAFD_{cod.cafd}_{cod.ver} {cod.when()} ({os.path.basename(cod.path)})")
+    print(f"{ecu_name(con, cod)} {diag_txt(cod)} CAFD_{cod.cafd}_{cod.ver} {cod.when()} ({os.path.basename(cod.path)})")
     for f in fs:
         if a.group and a.group.upper() not in (f["addr"], f["group"].upper()):
             continue
@@ -402,7 +550,7 @@ def cmd_values(a):
 
 
 def write_new(con, cod, changes, note):
-    """changes: list of (func, new_hex). Writes a new .cod in out\\ and returns its path."""
+    """changes: list of (func, new_hex). Writes a new backup in out\\ and returns its path."""
     blocks = cod.blocks
     log = []
     for f, hx in changes:
@@ -414,16 +562,26 @@ def write_new(con, cod, changes, note):
         assert new == hx.upper(), (new, hx)
         log.append((f, old, new))
     ts = int(datetime.datetime.now().timestamp())
-    m = FN_RE.match(os.path.basename(cod.path))
-    ecu_id, vin = (m.group("ecu"), m.group("vin")) if m else (cod.ecu_id, cod.vin)
-    out = os.path.join(OUT, f"{ecu_id}-{vin}-{ts}.cod")
-    while os.path.exists(out):
-        ts += 1
+    if cod.platform == "Android":
+        # BimmerCode for Android names a backup <VIN>_<ECU>.dat, so the new one keeps the source's name in its
+        # own folder per edit run
+        stamp = lambda t: datetime.datetime.fromtimestamp(t).strftime("%Y%m%d-%H%M%S")
+        out = os.path.join(OUT, stamp(ts), os.path.basename(cod.path))
+        while os.path.exists(out):
+            ts += 1
+            out = os.path.join(OUT, stamp(ts), os.path.basename(cod.path))
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+    else:
+        m = FN_RE.match(os.path.basename(cod.path))
+        ecu_id, vin = (m.group("ecu"), m.group("vin")) if m else (cod.ecu_id, cod.vin)
         out = os.path.join(OUT, f"{ecu_id}-{vin}-{ts}.cod")
-    Cod(cod.path).save_as(out, blocks)  # fresh copy of the source, so nothing leaks between runs
+        while os.path.exists(out):
+            ts += 1
+            out = os.path.join(OUT, f"{ecu_id}-{vin}-{ts}.cod")
+    open_backup(cod.path).save_as(out, blocks)  # fresh copy of the source, so nothing leaks between runs
     # verify: re-read, only the intended functions changed
     fs = functions(con, cod)
-    before, after = cod.blocks, Cod(out).blocks
+    before, after = cod.blocks, open_backup(out).blocks
     changed = {(f["addr"], f["start"], f["end"], f["mask"]) for f, _, _ in log}
     for f in fs:
         k = (f["addr"], f["start"], f["end"], f["mask"])
@@ -504,7 +662,7 @@ def cmd_check(a):
     if not SRC or not os.path.isdir(SRC):
         sys.exit("BimmerCode backups folder not set: nothing to compare the originals with")
     bad = 0
-    for p in glob.glob(os.path.join(ORIG, "*.cod")):
+    for p in backup_files(ORIG):
         s = os.path.join(SRC, os.path.basename(p))
         if os.path.exists(s) and hashlib.sha256(open(p, "rb").read()).digest() != hashlib.sha256(open(s, "rb").read()).digest():
             print("MODIFIED:", os.path.basename(p))
@@ -537,6 +695,8 @@ def main():
     a = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ensure_workspace()
+    if a.cmd not in ("init", "check"):
+        ensure_defs()
     globals()["cmd_" + a.cmd](a)
 
 

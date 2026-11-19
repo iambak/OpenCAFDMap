@@ -1,6 +1,7 @@
 // Headless decryption of your own psdzdata with E-Sys's own PsdZ logic. Runs on your machine only;
 // the decrypted files stay in your workspace and are never committed.
 //   python ocm\esys.py run esys\decrypt.js <outDir> <mainSeries|ALL> <fafpOut> [limit] [idFilterCsv]
+// idFilterCsv: CAFD ids (00001ef6: every version) or exact files (00001ef6.caf.006_064_013).
 // Writes <outDir>\cafd_<id>_<main>_<sub>_<patch>.xml.gz for every CAFD whose fpInfo lists <mainSeries>,
 // and <fafpOut> = the newest FA->FP mapping (fafp) of that main series.
 // Keeps a manifest (manifest.tsv) so reruns skip files already handled.
@@ -49,7 +50,7 @@ for (var i = 0; i < files.length; i++) {
   if (name.indexOf("cafd_") !== 0 || done[name]) continue;
   if (idFilter) {
     var id = name.substring(5, 13);
-    if (idFilter.indexOf(id) < 0) continue;
+    if (idFilter.indexOf(id) < 0 && idFilter.indexOf(name.substring(5)) < 0) continue;
   }
   if (limit && n >= limit) break;
   n++;

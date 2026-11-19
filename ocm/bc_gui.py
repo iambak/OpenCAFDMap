@@ -10,6 +10,8 @@ import contextlib
 import io
 import os
 import sys
+import queue
+import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -60,28 +62,27 @@ class App(tk.Tk):
         appicon.apply(self)
         self.geometry("1500x850")
         bt.ensure_workspace()
-        if not os.path.exists(bt.DB):
-            messagebox.showerror("No definition DB", f"{bt.DB} not found.\nBuild the definitions in OpenLauncher first.")
-            self.destroy()
-            raise SystemExit(1)
-        self.con = bt.db()
+        self.con = None          # opened once the definitions for your backups are ready (prepare())
         self.cod = None          # loaded backup (bt.Cod)
         self.funcs = []          # function dicts of the loaded backup
         self.cur = {}            # func pk -> current hex
         self.staged = {}         # func pk -> new hex
         self.cods = {}           # tree iid -> path
         self._build()
-        self.refresh_backups()
+        self.after(50, self.prepare)
 
     # ---------------------------------------------------------------- layout
     def _build(self):
         top = ttk.Frame(self, padding=4)
         top.pack(fill="x")
-        ttk.Button(top, text="Refresh", command=self.refresh_backups).pack(side="left")
-        ttk.Button(top, text="Diff 2 selected backups", command=self.diff_selected).pack(side="left", padx=4)
-        ttk.Button(top, text="Check originals", command=self.check_originals).pack(side="left")
-        ttk.Button(top, text="Open out folder", command=lambda: os.startfile(bt.OUT)).pack(side="left", padx=4)
-        ttk.Button(top, text="Import new backups from source folder", command=self.import_new).pack(side="left")
+        self.top_buttons = [
+            ttk.Button(top, text="Refresh", command=self.refresh_backups),
+            ttk.Button(top, text="Diff 2 selected backups", command=self.diff_selected),
+            ttk.Button(top, text="Check originals", command=self.check_originals),
+            ttk.Button(top, text="Open out folder", command=lambda: os.startfile(bt.OUT)),
+            ttk.Button(top, text="Import new backups from source folder", command=self.import_new)]
+        for i, b in enumerate(self.top_buttons):
+            b.pack(side="left", padx=4 if i % 2 else 0)
         self.status = tk.StringVar(value="Select a backup on the left.")
         ttk.Label(top, textvariable=self.status).pack(side="left", padx=12)
 
@@ -203,16 +204,59 @@ class App(tk.Tk):
         self.cods.clear()
         items = []
         for c in bt.all_cods():
-            src = "out" if os.path.dirname(c.path) == bt.OUT else "orig"
-            items.append((c.diag, c.ts, src, c))
+            src = "out" if bt.is_out(c) else "orig"
+            items.append((c.diag if c.diag is not None else 999, c.ts, src, c))
         for diag, ts, src, c in sorted(items, key=lambda x: (x[0], x[1])):
-            iid = self.tb.insert("", "end", values=(src, f"0x{c.diag:02X}", bt.ecu_name(self.con, c),
+            iid = self.tb.insert("", "end", values=(src, bt.diag_txt(c), bt.ecu_name(self.con, c),
                                                      f"{c.cafd}_{c.ver}", c.when()))
             self.cods[iid] = c.path
         self.status.set(f"{len(items)} backups")
 
+    def prepare(self):
+        """Decrypt the CAFD versions your backups need and (re)build the editor's definitions in the background:
+        seconds, and only when something changed."""
+        self.status.set("Preparing definitions for your backups ...")
+        self.set_busy(True)
+        q = queue.Queue()        # Tk isn't thread-safe: the worker only talks to the window through this queue
+
+        def work():
+            q.put(("done",) + run_captured(bt.ensure_defs, lambda s: q.put(("status", s)))[:2])
+
+        def poll():
+            while True:
+                try:
+                    msg = q.get_nowait()
+                except queue.Empty:
+                    self.after(100, poll)
+                    return
+                if msg[0] == "status":
+                    self.status.set(msg[1])
+                    continue
+                _, ok, txt = msg
+                self.reopen_db()
+                self.set_busy(False)
+                self.refresh_backups()
+                if not ok:
+                    messagebox.showerror("Definitions", txt, parent=self)
+                return
+        threading.Thread(target=work, daemon=True).start()
+        poll()
+
+    def reopen_db(self):
+        if self.con:
+            self.con.close()
+        self.con = bt.db() if os.path.exists(bt.DB) else None
+
+    def set_busy(self, busy):
+        for w in self.top_buttons:
+            w.state(["disabled"] if busy else ["!disabled"])
+
     def import_new(self):
+        if self.con:
+            self.con.close()             # the import may rebuild the DB file
+            self.con = None
         ok, txt, _ = run_captured(bt.cmd_init, type("A", (), {"folder": None})())
+        self.reopen_db()
         self.refresh_backups()
         messagebox.showinfo("Import", txt or "done", parent=self)
 
@@ -230,7 +274,10 @@ class App(tk.Tk):
         self.load(path)
 
     def load(self, path):
-        self.cod = bt.Cod(path)
+        if not self.con:
+            messagebox.showerror("Definitions", "The definitions for your backups aren't ready yet.", parent=self)
+            return
+        self.cod = bt.open_backup(path)
         ok, txt, fs = run_captured(bt.functions, self.con, self.cod)
         if not ok:
             messagebox.showerror("Not in definition DB", txt, parent=self)
@@ -395,7 +442,7 @@ class App(tk.Tk):
                           for pk, hx in self.staged.items())
         if not messagebox.askyesno("Write new backup?",
                                    f"Source: {os.path.basename(self.cod.path)}\n\n{lines}\n\n"
-                                   "A NEW .cod is written to out\\ (the source is not changed). Continue?",
+                                   "A NEW backup is written to out\\ (the source is not changed). Continue?",
                                    parent=self):
             return
         changes = [(next(x for x in self.funcs if x["pk"] == pk), hx) for pk, hx in self.staged.items()]
