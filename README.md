@@ -31,7 +31,7 @@ Not in the chart: BMW i (I001), Rolls-Royce (RR01/RR11/RR21), Motorrad (K-series
 OpenLauncher works with any main series: set it in OpenLauncher. For G020 and F030, about 92% of functions across every CAFD version carry BMW's own verified names. OpenLauncher dynamically calculates the rest: functions are named from their group, byte and mask, and values are labelled with their coding rules. Untrimmed dumps of CAFDs your series doesn't share with those raise its bar the most ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ### Before / after
-The same FLM2 NCD (CAFD 00006DF0) in E-Sys's FDL-Editor, first in stock E-Sys, then in E-Sys started from OpenLauncher:
+The same BDC NCD (CAFD 00007083) in E-Sys's FDL-Editor, first in stock E-Sys, then in E-Sys started from OpenLauncher:
 
 | Stock E-Sys | With Open CAFD Map |
 |---|---|
@@ -154,11 +154,23 @@ E-Sys started by OpenLauncher has an **OpenLauncher** section at the bottom of i
 - **Apply to E-Sys FA** hands the edited FA to E-Sys's FA editor, which marks it "updated, not saved". Saving it and writing it to the car stay in E-Sys, as usual. **Save FA as...** writes it to a file instead.
 - **Data:** everything it needs ships with Open CAFD Map in `data\fa\` (8,456 type keys, built from ISTA and KIS) and updates through **Check for updates**, so it doesn't depend on how old your psdzdata is. The CAFD check uses your own psdzdata through E-Sys's PsdZ.
 
-**DTC.** Read the car's faults, and clear them after coding. E-Sys doesn't clear faults after **Code**; BimmerCode does, and this does the same.
-- **Read faults** finds every module that answers and lists its faults: module, address, fault code, status (present, stored or pending) and the fault text. Modules without faults are listed too.
-- **Clear all faults...** asks first, then sends one "clear all faults" request to every module (`14 FF FF FF`), the same request BimmerCode sends after coding, and reads the faults again. Faults that are still there come back. **Also clear the info memory** (off by default) clears BMW's info memory too.
-- **Connection:** it uses the gateway E-Sys is connected to (Open Connection first) and talks to the car next to E-Sys over ENET. Coding data, the FA and the SVT aren't touched.
-- **Data:** fault texts (English and German, by module address and fault code) ship with Open CAFD Map in `data\dtc\`, built from ISTA, and update through **Check for updates**. Where ISTA has several texts for one code, the most common is shown and the others are in its tooltip.
+**DTC.** Read the car's fault codes (DTCs) in E-Sys, and clear them after coding. E-Sys doesn't clear faults after **Code**; BimmerCode does, and DTC does the same.
+
+![DTC in E-Sys: faults per module with their code, status (stored, present, pending) and text; a module that refused the read and modules without faults below](docs/images/dtc.png)
+
+- **Read faults:** connect E-Sys to the car as usual (**Open Connection**), open **DTC** in the OpenLauncher section and press **Read faults**. Every module that answers is listed:
+  - **Module:** the module's name from E-Sys's SVT when you've read it, otherwise its usual name at that address; **Address:** its diagnostic address; **Fault code:** as the module reports it.
+  - **Status:** **present** (the fault is there right now), **stored** (it was there and is remembered) or **pending** (seen, but not confirmed yet).
+  - **Description:** the fault's text in English or German (follows E-Sys's language); `-` when there's no text for that code. Where ISTA has more than one text for a code at that address, the most common is shown and the others are in its tooltip.
+  - Modules with faults come first, then modules that refused the request, then modules without faults (green).
+- **Clear all faults...** asks first, then sends one "clear all faults" request to every module (`14 FF FF FF`), the same request BimmerCode sends after coding, and reads the faults again. A module that doesn't answer gets the request on its own.
+  - Faults that are still there come back: clearing only removes what's stored. Fix the cause first.
+  - **Also clear info memory** (off by default) also clears BMW's info memory (Infospeicher), which keeps notes that aren't faults.
+  - Coding data, the FA and the SVT aren't touched.
+- **Connection:** DTC uses the car E-Sys is connected to. A car's gateway takes one diagnostic connection at a time, so while E-Sys is connected, DTC borrows E-Sys's connection for a moment: it closes it, reads or clears, and opens it again with the same settings. If E-Sys's connection can't be opened again, DTC says so: use **Open Connection** in E-Sys.
+  - The **Gateway** field shows the address DTC used. **From E-Sys** fills it from E-Sys's connection; you can also type an address, for example `tcp://169.254.0.8:6801`.
+  - DTC doesn't start while E-Sys is busy (coding, flashing).
+- **Fault texts** ship with Open CAFD Map in `data\dtc\`, built from ISTA, and update through **Check for updates**. Nothing from ISTA is needed on your PC.
 
 **FA / SVT auto-backup.** Every FA and SVT that E-Sys reads from the vehicle is saved as a copy in E-Sys's data folder (`Path.Home`, for example `H:\Data`), with no button to press:
 - **FA:** `FA\FABak\<series>_<last 7 of VIN>.xml`; **SVT:** `SVT\SVTBak\<series>_<last 7 of VIN>.xml`. The files are E-Sys's own FA / SVT XML, so **Load** opens them like any other.
