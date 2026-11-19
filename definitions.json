@@ -1,11 +1,14 @@
 {
- "version": "2026.11.18.1",
- "date": "2026-11-18T14:41:46Z",
+ "version": "2026.11.19.1",
+ "date": "2026-11-19T04:14:45Z",
  "files": {
   "data/contexts/G20_LCI_ECE_320i_11FF.xml": "f621bfff2f28901354255ca0aa8813ae2d19cf7c1374d978c8b16aa5b2cfe5ee",
   "data/contexts/G20_LCI_US_330ixDrive_89FF.xml": "3bd5e3d83ecbd0503f18f3c57680cf1643e38f1bf9341c0bed12877df973592a",
   "data/contexts/G20_LCI_US_M340ixDrive_43FF.xml": "72ae264afa8527e5ecd138636e55dccfb1b0ba633b1d6e4bcfd70df539e778a3",
   "data/contexts/G21_LCI_ECE_318i_11FY.xml": "a3e430b168f5601ef6359b3a1e870eb5437e63782d36e44b631f0148224f8f27",
+  "data/dtc/SOURCES.txt": "7c8fd0fd1af4920e56edffc52f9a8681c38e88aeb2b40de5447a4686cd889a94",
+  "data/dtc/faults.tsv.gz": "6e0727051050fc2b34d1f015eb456b9c843e4e8eafda02686142cc2cc70211a0",
+  "data/dtc/modules.tsv.gz": "044b9196b4339ed9517c9c69fd0308182f8d9b56fa1f69d45513712cc15ab593",
   "data/ecu_cafd.tsv": "03fb0c2c20cf4e620229fda0701cf1fc6af68cb41d645ce74645a95f3fd5fe41",
   "data/ecu_extra.tsv": "7af3675267854751abd38cff9b63d00af60781e715d239bbb0fd961d63c1c7f4",
   "data/fa/SOURCES.txt": "d9bdff371ccf657598f58a2d891938e8b591361610ac3b2bd59b1187f08bda1c",
