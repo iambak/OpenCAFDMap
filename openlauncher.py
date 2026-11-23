@@ -277,13 +277,18 @@ class OpenLauncher(tk.Tk):
         self.launcher_label = tk.StringVar()
         ttk.Label(u, textvariable=self.launcher_label, style="CardMuted.TLabel", wraplength=380,
                   justify="left").pack(anchor="w", pady=(6, 0))
-        # v3 preview (pre-release install or testing-branch clone): the way back to the stable v2 launcher
+        # v3 preview (pre-release install or v3-testing clone): the way back to the stable release; a stable
+        # install can try the newest preview instead
         sr = ttk.Frame(u, style="Card.TFrame")
-        self.btn_stable = ttk.Button(sr, text="Back to stable", style="Ghost.TButton", command=self.back_to_stable)
-        self.btn_stable.pack(side="left")
-        ttk.Label(sr, text="You're on the v3 preview", style="CardMuted.TLabel").pack(side="left", padx=10)
+        sr.pack(anchor="w", pady=(8, 0))
         if updater.is_preview():
-            sr.pack(anchor="w", pady=(8, 0))
+            self.btn_stable = ttk.Button(sr, text="Back to stable", style="Ghost.TButton", command=self.back_to_stable)
+            note = "You're on the v3 preview"
+        else:
+            self.btn_stable = ttk.Button(sr, text="Try the preview", style="Ghost.TButton", command=self.try_preview)
+            note = "Test the next v3 version early; Back to stable returns any time"
+        self.btn_stable.pack(side="left")
+        ttk.Label(sr, text=note, style="CardMuted.TLabel").pack(side="left", padx=10)
         self.set_launcher_state("check")
 
         # folders + latest activity -----------------------------------------------
@@ -723,8 +728,43 @@ class OpenLauncher(tk.Tk):
             return
         self.after(300, self.destroy)
 
+    def try_preview(self):
+        """Updates > Try the preview (stable v3 installs): the newest v3 pre-release if it's newer than this
+        version, or the v3-testing branch in a git clone."""
+        title = "Try the preview"
+        if not self._launcher_update_allowed(title):
+            return
+        back = "\n\nTo come back: Updates > Back to stable (installs the newest stable release)."
+        if updater.is_git_clone():
+            if messagebox.askyesno(
+                    title, f"This switches the git clone in\n{ROOT}\nto the {updater.PREVIEW_BRANCH} branch (v3 "
+                           "preview) and restarts OpenLauncher. Uncommitted changes are saved to a git stash and local "
+                           "commits to a backup branch first. Your workspace and config.json are not touched."
+                           + back + "\n\nSwitch now?"):
+                self._git_update(force=True, target=updater.PREVIEW_BRANCH)
+            return
+        self.set_launcher_state("busy")
+
+        def work():
+            try:
+                ver = updater.preview_latest()
+            except updater.UpdateError as e:
+                self.q.put(f"Looking for the preview: {e}")
+                self.q.put(lambda: self.set_launcher_state("check"))
+                return
+            self.q.put(lambda: self.set_launcher_state("check"))
+            cur = updater.launcher_installed()
+            if not ver or (cur and updater.vtuple(ver) <= updater.vtuple(cur)):
+                self.q.put(lambda: messagebox.showinfo(title, "There's no preview newer than this version right now. "
+                                                              "Check again later."))
+                return
+            self.q.put(lambda: self._install_release(title, f"the OpenLauncher v{ver} preview",
+                                                     "Install the preview now?", version=ver, extra=back))
+        threading.Thread(target=work, daemon=True).start()
+
     def back_to_stable(self):
-        """Updates > Back to stable (v3 preview only): the latest stable release, or the main branch in a clone."""
+        """Updates > Back to stable (v3 preview only): the newest v3 release (the newest v2 one before v3.0.0), or
+        the main branch in a clone."""
         title = "Back to stable"
         if not self._launcher_update_allowed(title):
             return
@@ -736,8 +776,22 @@ class OpenLauncher(tk.Tk):
                            "\n\nSwitch now?"):
                 self._git_update(force=True, target=updater.GIT_BRANCH)
             return
-        self._install_release(title, "the latest stable release", "Go back to stable now?",
-                              extra="\n\nYou can try the v3 preview again from Updates > Try OpenLauncher v3.")
+        self.set_launcher_state("busy")
+
+        def work():
+            try:
+                ver = updater.stable_target()
+            except updater.UpdateError as e:
+                self.q.put(f"Looking for the stable release: {e}")
+                self.q.put(lambda: self.set_launcher_state("check"))
+                return
+            self.q.put(lambda: self.set_launcher_state("check"))
+            if not ver:
+                self.q.put(lambda: messagebox.showinfo(title, "No stable release was found. Check again later."))
+                return
+            self.q.put(lambda: self._install_release(title, f"OpenLauncher v{ver}", "Go back to stable now?",
+                                                     version=ver))
+        threading.Thread(target=work, daemon=True).start()
 
     # ---------------------------------------------------------------- actions
     def _lock(self, busy):
