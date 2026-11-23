@@ -141,6 +141,37 @@ E-Sys started by OpenLauncher has an **OpenLauncher** section at the bottom of i
 - **Go to** selects the function in the FDL tree.
 - **Apply** sets the entry's values in the FDL editor through E-Sys's own edit path. A preset value is picked from the value list; a custom value is entered in the raw value field (`Werte=`), and E-Sys's parsed result is checked byte for byte. Only the NCD open in the editor changes, and E-Sys marks it as modified. Saving and coding stay with you, as usual. Steps that don't fit are skipped and listed.
 
+**FA Helper.** A vehicle order (FA / VO) editor: options (SALAPA), HO-words and E-words as tick lists with their titles, checked as you edit.
+
+![FA Helper in E-Sys: a G20 FA with two conflicts flagged in red (two sound systems, two transmissions) and Check CAFDs listing the CAFDs this psdzdata doesn't have](docs/images/fa_helper.png)
+
+- **Read from E-Sys** takes the FA open in Coding or the FA editor; **Open FA file...** loads one from disk. Your edits stay in the helper until you apply them.
+- **Checked live:**
+  - the type key and its build date;
+  - each option against what's offered for that type key and when (standard / optional, with production windows);
+  - two options from one class (for example 2TE and 2TB, two transmissions) are flagged as a conflict.
+- **Check CAFDs (PsdZ)** calculates the target SVT for the edited FA at the chosen I-step and lists every CAFD your psdzdata doesn't have, with the option that brought it in.
+- **Apply to E-Sys FA** hands the edited FA to E-Sys's FA editor, which marks it "updated, not saved". Saving it and writing it to the car stay in E-Sys, as usual. **Save FA as...** writes it to a file instead.
+- **Data:** everything it needs ships with Open CAFD Map in `data\fa\` (8,456 type keys, built from ISTA and KIS) and updates through **Check for updates**, so it doesn't depend on how old your psdzdata is. The CAFD check uses your own psdzdata through E-Sys's PsdZ.
+
+**DTC.** Read the car's fault codes (DTCs) in E-Sys, and clear them after coding. E-Sys doesn't clear faults after **Code**; BimmerCode does, and DTC does the same.
+
+![DTC in E-Sys: faults per module with their code, status (stored, present, pending) and text; a module that refused the read and modules without faults below](docs/images/dtc.png)
+
+- **Read faults:** connect E-Sys to the car as usual (**Open Connection**), open **DTC** in the OpenLauncher section and press **Read faults**. Every module that answers is listed:
+  - **Module:** the module's name from E-Sys's SVT when you've read it, otherwise its usual name at that address; **Address:** its diagnostic address; **Fault code:** as the module reports it.
+  - **Status:** **present** (the fault is there right now), **stored** (it was there and is remembered) or **pending** (seen, but not confirmed yet).
+  - **Description:** the fault's text in English or German (follows E-Sys's language); `-` when there's no text for that code. Where ISTA has more than one text for a code at that address, the most common is shown and the others are in its tooltip.
+  - Modules with faults come first, then modules that refused the request, then modules without faults (green).
+- **Clear all faults...** asks first, then sends one "clear all faults" request to every module (`14 FF FF FF`), the same request BimmerCode sends after coding, and reads the faults again. A module that doesn't answer gets the request on its own.
+  - Faults that are still there come back: clearing only removes what's stored. Fix the cause first.
+  - **Also clear info memory** (off by default) also clears BMW's info memory (Infospeicher), which keeps notes that aren't faults.
+  - Coding data, the FA and the SVT aren't touched.
+- **Connection:** DTC uses the car E-Sys is connected to. A car's gateway takes one diagnostic connection at a time, so while E-Sys is connected, DTC borrows E-Sys's connection for a moment: it closes it, reads or clears, and opens it again with the same settings. If E-Sys's connection can't be opened again, DTC says so: use **Open Connection** in E-Sys.
+  - The **Gateway** field shows the address DTC used. **From E-Sys** fills it from E-Sys's connection; you can also type an address, for example `tcp://169.254.0.8:6801`.
+  - DTC doesn't start while E-Sys is busy (coding, flashing).
+- **Fault texts** ship with Open CAFD Map in `data\dtc\`, built from ISTA, and update through **Check for updates**. Nothing from ISTA is needed on your PC.
+
 **FA / SVT auto-backup.** Every FA and SVT that E-Sys reads from the vehicle is saved as a copy in E-Sys's data folder (`Path.Home`, for example `H:\Data`), with no button to press:
 - **FA:** `FA\FABak\<series>_<last 7 of VIN>.xml`; **SVT:** `SVT\SVTBak\<series>_<last 7 of VIN>.xml`. The files are E-Sys's own FA / SVT XML, so **Load** opens them like any other.
 - **Covered:** Vehicle Order **Read** and SVT Actual **Read (VCM)** / **Read (ECU)** in Coding, and the FA and SVT editors. Files you **Load** aren't copied, and neither is the calculated SVT target.

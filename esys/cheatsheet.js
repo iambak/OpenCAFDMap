@@ -503,7 +503,7 @@
     var frame = h.esysFrame();
     var curField = h.field(null, h.cls("com.bmw.esys.gui.control.EsysFrame"), "currentView");
     // Is E-Sys's FDL editor view (or our split around it) what's on screen? E-Sys's "current module" isn't enough: one
-    // of our tool views (Compare NCD, ...) can be showing while E-Sys still has FDLEditor as its module.
+    // of our tool views (FA Helper, DTC, ...) can be showing while E-Sys still has FDLEditor as its module.
     var fdl = null;
     try { var mc = inst.getCachedModules().get("FDLEditor"); fdl = mc ? mc.getView() : null; } catch (eM) {}
     var shown = curField.get(frame);
@@ -566,5 +566,5 @@
     }
   }
 
-  return { open: open, tick: tick };
+  return { open: open, tick: tick, view: function () { return split; } };   // view: for the section's selection mark
 });

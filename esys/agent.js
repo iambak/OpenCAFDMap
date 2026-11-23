@@ -788,11 +788,17 @@
     }
   }
 
+  // Launch options (OpenLauncher > Launch options): -Docm.feature.<name>=0 switches a feature off. Default: on.
+  function feature(name) { return String(System.getProperty("ocm.feature." + name, "1")) !== "0"; }
+  var LABELS = feature("labels");
+  var off = ["labels", "tools", "backup"].filter(function (n) { return !feature(n); });
+  if (off.length) log("Launch options: off for this session: " + off.join(", "));
+
   // OpenLauncher section in E-Sys's navigation bar (esys/tools.js). Optional: any problem only disables the tools.
   var tools = null;
   try {
     var toolsFile = new File(SCRIPT_FILE.getParentFile(), "tools.js");
-    if (toolsFile.exists()) {
+    if (toolsFile.exists() && feature("tools")) {
       tools = load(toolsFile.getPath())({
         log: log, defDir: DEF_DIR, runtimeDir: RUNTIME_DIR, python: PYTHON, tools: TOOLS,
         logDir: LOG_FILE.getParentFile(), loadXmlDef: loadXmlDef,
@@ -808,7 +814,7 @@
   var backup = null;
   try {
     var backupFile = new File(SCRIPT_FILE.getParentFile(), "backup.js");
-    if (backupFile.exists()) {
+    if (backupFile.exists() && feature("backup")) {
       backup = load(backupFile.getPath())({
         log: log, dataDir: System.getProperty("ocm.datadir") ? String(System.getProperty("ocm.datadir")) : null
       });
@@ -832,7 +838,7 @@
         backup = null;
       }
       try {
-        var wins = Window.getWindows();
+        var wins = LABELS ? Window.getWindows() : [];   // labels off (Launch options): leave E-Sys's trees as they are
         for (var i = 0; i < wins.length; i++) {
           if (wins[i].isShowing()) {
             scanContainer(wins[i]);

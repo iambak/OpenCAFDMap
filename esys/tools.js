@@ -1,7 +1,11 @@
 // Open CAFD Map tools inside E-Sys: an "OpenLauncher" section in E-Sys's left navigation bar with our utilities.
-// Loaded by agent.js (only in an E-Sys started by OpenLauncher). Read-only: nothing here writes coding data or NCDs.
+// Loaded by agent.js (only in an E-Sys started by OpenLauncher). Nothing here writes coding data or NCDs; the only
+// request that changes the car is DTC's "Clear all faults", after the user confirms it.
 //
 //   Compare NCD   two NCD files side by side, with BMW / community names; differences in red; Save diff (TSV)
+//   Cheat Sheet   E-Sys's FDL Editor with cheat sheets (esys/cheatsheet.js)
+//   FA Helper     vehicle order editor checked against data\fa\ and E-Sys's PsdZ (esys/fahelper.js)
+//   DTC           read the car's faults and clear them after coding, texts from data\dtc\ (esys/dtc.js)
 //
 // How it attaches: E-Sys's left bar is an OutlookBarPanel (public addBar). A tool's view is shown the way E-Sys shows a
 // module: AbstractView.replace(currentView, ourView) and EsysFrame.currentView = ourView, so clicking any E-Sys section
@@ -441,6 +445,7 @@
     try {
       if (!views[id]) views[id] = build();
       showView(views[id]);
+      selectTool(id);
     } catch (e) {
       log("OpenLauncher tool '" + id + "' failed: " + e);
     }
@@ -482,18 +487,126 @@
     log("Cheat Sheet window not loaded: " + eC);
   }
 
-  function toolButton(text, icon, tip, action) {
-    var b = new Sw.JButton(text, icon);
-    b.setVerticalTextPosition(Sw.SwingConstants.BOTTOM);
-    b.setHorizontalTextPosition(Sw.SwingConstants.CENTER);
-    b.setAlignmentX(Awt.Component.CENTER_ALIGNMENT);
-    b.setContentAreaFilled(false);
-    b.setBorderPainted(false);
+  // FA / VO Helper (esys/fahelper.js): vehicle order editor checked against data\fa\ and E-Sys's PsdZ.
+  var faHelper = null;
+  try {
+    var dataDir = api.tools ? new File(new File(api.tools).getParentFile(), "data") : null;
+    if (dataDir && new File(dataDir, "fa").isDirectory()) {
+      faHelper = load(new File(new File(String(System.getProperty("ocm.agent"))).getParentFile(), "fahelper.js").getPath())({
+        log: log, cls: cls, dataDir: dataDir,
+        esysDataDir: System.getProperty("ocm.datadir") ? String(System.getProperty("ocm.datadir")) : null,
+        // same soft gate as Cheat Sheet Apply: editing E-Sys's documents only on tested versions unless "Try anyway"
+        applyEnabled: TESTED || TRY,
+        applyOffReason: "Apply is off on E-Sys " + (ESYS_VER || "(unknown version)") + ": OpenLauncher wasn't tested with " +
+                        "this version. Use Save FA as..., or tick \"Try anyway\" in OpenLauncher and restart E-Sys."
+      });
+    } else {
+      log("FA Helper not added: no data\\fa\\ tables (Check for updates in OpenLauncher)");
+    }
+  } catch (eF) {
+    log("FA Helper not loaded: " + eF);
+  }
+
+  // DTC (esys/dtc.js): read the car's faults and clear them after coding, texts from data\dtc\.
+  var dtc = null;
+  try {
+    var dtcData = api.tools ? new File(new File(api.tools).getParentFile(), "data") : null;
+    if (dtcData && new File(dtcData, "dtc").isDirectory()) {
+      dtc = load(new File(new File(String(System.getProperty("ocm.agent"))).getParentFile(), "dtc.js").getPath())({
+        log: log, cls: cls, dataDir: dtcData
+      });
+    } else {
+      log("DTC not added: no data\\dtc\\ tables (Check for updates in OpenLauncher)");
+    }
+  } catch (eD) {
+    log("DTC not loaded: " + eD);
+  }
+
+  function dtcIcon(size) {
+    var img = new Awt.image.BufferedImage(size, size, Awt.image.BufferedImage.TYPE_INT_ARGB);
+    var g = img.createGraphics();
+    g.setRenderingHint(Awt.RenderingHints.KEY_ANTIALIASING, Awt.RenderingHints.VALUE_ANTIALIAS_ON);
+    var s = size / 32;
+    // an engine-warning style lamp: amber rounded body with a dark exclamation mark
+    g.setColor(new Awt.Color(0xF2, 0xA9, 0x00)); g.fillRoundRect(4 * s, 7 * s, 24 * s, 18 * s, 7 * s, 7 * s);
+    g.setColor(new Awt.Color(0x50, 0x50, 0x58)); g.setStroke(new Awt.BasicStroke(1.2 * s));
+    g.drawRoundRect(4 * s, 7 * s, 24 * s, 18 * s, 7 * s, 7 * s);
+    g.setColor(new Awt.Color(0x30, 0x30, 0x34));
+    g.fillRoundRect(14.5 * s, 10 * s, 3 * s, 9 * s, 2 * s, 2 * s);
+    g.fillOval(14.5 * s, 20.5 * s, 3 * s, 3 * s);
+    g.dispose();
+    return new Sw.ImageIcon(img);
+  }
+
+  function faIcon(size) {
+    var img = new Awt.image.BufferedImage(size, size, Awt.image.BufferedImage.TYPE_INT_ARGB);
+    var g = img.createGraphics();
+    g.setRenderingHint(Awt.RenderingHints.KEY_ANTIALIASING, Awt.RenderingHints.VALUE_ANTIALIAS_ON);
+    var s = size / 32;
+    g.setColor(new Awt.Color(0xF4, 0xF4, 0xF6)); g.fillRoundRect(5 * s, 3 * s, 22 * s, 26 * s, 3 * s, 3 * s);
+    g.setColor(new Awt.Color(0x50, 0x50, 0x58)); g.setStroke(new Awt.BasicStroke(1.2 * s)); g.drawRoundRect(5 * s, 3 * s, 22 * s, 26 * s, 3 * s, 3 * s);
+    for (var i = 0; i < 4; i++) {
+      var y = (8 + i * 5.5) * s;
+      g.setColor(i === 2 ? new Awt.Color(0xB4, 0x23, 0x18) : new Awt.Color(0x0B, 0x7A, 0x3E));
+      g.fillRect(8 * s, y, 3.5 * s, 3.5 * s);
+      g.setColor(new Awt.Color(0x70, 0x70, 0x78)); g.fillRect(13.5 * s, y + 1 * s, 10.5 * s, 1.6 * s);
+    }
+    g.dispose();
+    return new Sw.ImageIcon(img);
+  }
+
+  // A tool entry built like E-Sys's own (OutlookView$OutlookButtonPanel): an icon button with an empty border and the
+  // name below it. The open tool gets E-Sys's selection mark (lowered bevel + 2/3 px padding, OutlookView.selectButton).
+  var toolIcons = {}, selectedTool = null;
+  function markIcon(b, on) {
+    b.setBorder(on ? Sw.BorderFactory.createCompoundBorder(Sw.BorderFactory.createBevelBorder(Sw.border.BevelBorder.LOWERED),
+                                                           Sw.BorderFactory.createEmptyBorder(2, 3, 2, 3))
+                   : Sw.BorderFactory.createEmptyBorder());
+    b.repaint();
+  }
+  // E-Sys's section bar (OutlookView) keeps its own selection; when one of our tools opens, its stock button is unmarked
+  function deselectEsys() {
+    var OV = cls("com.bmw.esys.gui.outlookbar.OutlookView");
+    if (!OV || !outlook) return;
+    for (var p = outlook.getParent(); p; p = p.getParent()) {
+      if (!OV.isInstance(p)) continue;
+      try {
+        var f = field(p, OV, "currentSelection"), sel = f.get(p);
+        if (sel) {
+          var m = OV.getDeclaredMethod("deselect", java.lang.String.class);
+          m.setAccessible(true);
+          m.invoke(p, sel);
+          f.set(p, null);
+        }
+      } catch (e) {}
+      return;
+    }
+  }
+  function selectTool(id) {
+    Object.keys(toolIcons).forEach(function (k) { markIcon(toolIcons[k], k === id); });
+    selectedTool = id;
+    if (id) deselectEsys();
+  }
+  function toolButton(id, text, icon, tip, action) {
+    var p = new Sw.JPanel();
+    p.setLayout(new Sw.BoxLayout(p, Sw.BoxLayout.Y_AXIS));
+    p.setOpaque(false);
+    p.setAlignmentX(Awt.Component.CENTER_ALIGNMENT);
+    var b = new Sw.JButton(icon);
+    b.setOpaque(false);
     b.setFocusPainted(false);
+    b.setBorder(Sw.BorderFactory.createEmptyBorder());
+    b.setAlignmentX(Awt.Component.CENTER_ALIGNMENT);
     b.setToolTipText(tip);
-    b.setForeground(darkMode() ? new Awt.Color(0xE0, 0xE0, 0xE0) : Awt.Color.BLACK);
     b.addActionListener(action);
-    return b;
+    var l = new Sw.JLabel(text);
+    l.setAlignmentX(Awt.Component.CENTER_ALIGNMENT);
+    l.setForeground(darkMode() ? new Awt.Color(0xE0, 0xE0, 0xE0) : Awt.Color.BLACK);
+    p.add(b);
+    p.add(Sw.Box.createVerticalStrut(2));
+    p.add(l);
+    if (id) toolIcons[id] = b;
+    return p;
   }
 
   function sectionPanel(bg) {
@@ -502,12 +615,21 @@
     p.setBackground(bg);
     p.setOpaque(true);
     p.add(Sw.Box.createVerticalStrut(6));
-    p.add(toolButton("Compare NCD", compareIcon(32), "Compare two NCD files side by side (Open CAFD Map)",
+    p.add(toolButton("compare", "Compare NCD", compareIcon(32), "Compare two NCD files side by side (Open CAFD Map)",
                      function () { openTool("compare", buildCompareView); }));
-    if (cheat) {
+    if (cheat) {   // E-Sys's FDL Editor wrapped with the cheat sheet pane: marked while that view is shown
       p.add(Sw.Box.createVerticalStrut(10));
-      p.add(toolButton("Cheat Sheet", sheetIcon(32), "FDL Editor with community cheat sheets, checked against the open CAFD",
-                       function () { try { cheat.open(); } catch (e) { log("Cheat Sheet failed: " + e); } }));
+      p.add(toolButton("cheat", "Cheat Sheet", sheetIcon(32), "FDL Editor with community cheat sheets, checked against the open CAFD",
+                       function () { try { cheat.open(); selectTool("cheat"); } catch (e) { log("Cheat Sheet failed: " + e); } }));
+    }
+    if (faHelper) {
+      p.add(Sw.Box.createVerticalStrut(10));
+      p.add(toolButton("fahelper", "FA Helper", faIcon(32), "Vehicle order (FA / VO) editor: options checked against the type key, " +
+                       "conflicts and the CAFDs your psdzdata has", function () { openTool("fahelper", faHelper.build); }));
+    }
+    if (dtc) {
+      p.add(Sw.Box.createVerticalStrut(10));
+      p.add(toolButton("dtc", "DTC", dtcIcon(32), "Read and clear fault codes", function () { openTool("dtc", dtc.build); }));
     }
     p.add(Sw.Box.createVerticalGlue());
     return p;
@@ -528,7 +650,8 @@
         outlook = ob;
         ob.addBar(BAR_NAME, sectionPanel(darkMode() ? new Awt.Color(0x3C, 0x3F, 0x41) : new Awt.Color(0xA0, 0xA0, 0xA3)));
         installed = true;
-        log("OpenLauncher section added to E-Sys (Compare NCD" + (cheat ? ", Cheat Sheet" : "") + ")");
+        log("OpenLauncher section added to E-Sys (Compare NCD" + (cheat ? ", Cheat Sheet" : "") + (faHelper ? ", FA Helper" : "") +
+            (dtc ? ", DTC" : "") + ")");
       } catch (e) {
         gaveUp = true;
         log("OpenLauncher section could not be added: " + e);
@@ -538,8 +661,20 @@
     if (++tries > 600) gaveUp = true;   // ~9 minutes without a main window: stop looking
   }
 
+  // our tool is no longer shown (an E-Sys module took over): drop our selection mark, as E-Sys does for its own
+  function trackSelection() {
+    if (!selectedTool) return;
+    try {
+      var frame = esysFrame(), cur = field(frame, cls("com.bmw.esys.gui.control.EsysFrame"), "currentView").get(frame);
+      var mine = selectedTool === "cheat" ? (cheat && cheat.view ? cheat.view() : null) : views[selectedTool];
+      if (cur !== mine) selectTool(null);
+      else deselectEsys();   // E-Sys can mark its module late (Cheat Sheet opens E-Sys's FDL Editor first)
+    } catch (e) {}
+  }
+
   function tick() {
     install();
+    trackSelection();
     if (cheat) cheat.tick();
   }
 
