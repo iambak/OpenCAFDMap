@@ -2,7 +2,7 @@
 
 **OpenLauncher** is a free, open-source launcher for BMW E-Sys that brings readable coding names back to F- and G-chassis CAFDs, using your own psdzdata and a community-maintained list of names. **Open CAFD Map** is the name data behind it.
 
-**Downloads:** [![stable](https://img.shields.io/github/v/release/shamair28/OpenCAFDMap?label=stable)](https://github.com/shamair28/OpenCAFDMap/releases/latest) [![v3 release candidate](https://img.shields.io/github/v/release/shamair28/OpenCAFDMap?include_prereleases&label=v3%20RC&color=e5383b)](https://github.com/shamair28/OpenCAFDMap/releases?q=prerelease%3Atrue&expanded=true)
+**Downloads:** [![stable](https://img.shields.io/github/v/release/shamair28/OpenCAFDMap?label=stable)](https://github.com/shamair28/OpenCAFDMap/releases/latest) [![v3 release candidate](https://img.shields.io/github/v/release/shamair28/OpenCAFDMap?include_prereleases&sort=semver&label=v3%20RC&color=e5383b)](https://github.com/shamair28/OpenCAFDMap/releases?q=prerelease%3Atrue&expanded=true)
 
 > **Documentation:** [shamair28.github.io/OpenCAFDMap-docs](https://shamair28.github.io/OpenCAFDMap-docs/)
 >
