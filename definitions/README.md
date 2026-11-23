@@ -46,4 +46,11 @@ FDL cheat-sheet XMLs (`<FDL><cafd id><code description><group id><function start
 - **kind** is G (group), F (function) or V (value).
 - **layout_hash** identifies the datagroup's exact function layout. A G row with `*` gives that address's group name for any layout.
 
+Names apply where a datagroup's layout matches exactly. When a CAFD version has a layout that isn't packaged
+(for example one field split in two), each of its functions can still borrow a name from a packaged layout with
+exactly the same address, start, end and mask. All such layouts must agree on the name, and none may name a value
+code the function doesn't have. Borrowed names end in ` (?)`: BMW sometimes reassigns bits between versions
+without moving them, so treat them as unverified and confirm them before coding. Names in `my_names.tsv`,
+`names\*.tsv`, contributed definitions and cheat sheets take priority.
+
 To add dumps, run `python ocm\untrimmed.py pack-dumps <folder>`. It only adds names, never removes them, and the check validates every row.

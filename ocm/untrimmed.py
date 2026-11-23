@@ -4,6 +4,7 @@ r"""BMW untrimmed names, packed by datagroup layout (definitions\untrimmed\<CAFD
 A datagroup's *layout* is the ordered list of its functions' start:end:mask. Names found for one CAFD version
 apply to every version whose datagroup has the same layout, so one entry covers all versions that share it,
 and names never land where bits moved. The same hash is computed in esys\agent.js at runtime.
+Groups whose layout isn't packaged fall back to exact field matches, marked as unverified (field_match).
 
 Package rows (tab separated):   kind  address  layout_hash  start  end  mask  value_hex  name
     G = group name (layout_hash "*" = fallback for any layout), F = function name, V = value name
@@ -50,7 +51,48 @@ def layout_hash(funcs):
 def placeholder(n):
     n = (n or "").strip()
     return (not n or n in (".", "UNKNOWN", "value", "custom_wert") or n.startswith("UnknowParam")
+            or n.endswith(POS_MARK.strip())   # borrowed by field position: never packed back as a real name
             or bool(re.fullmatch(r"wert_\d+", n)) or bool(re.fullmatch(r"Group_[0-9A-Fa-f]{4}", n)))
+
+
+# ------------------------------------------------------------------ field fallback (issue #8)
+# A datagroup whose layout isn't packaged (e.g. one field split in two) gets no names by layout. Its functions can
+# still borrow the name packaged for exactly the same address, start, end and mask, but that is a guess: checked
+# against the pack itself (leave one layout out), such a name is the right one for ~86% of fields when only one
+# other layout has the field and ~98% when three or more agree; BMW reassigns reserved bits between versions
+# without moving them. So borrowed names carry POS_MARK, and a layout only counts when it names no value code the
+# function doesn't have (a reserved bit {00} that became a feature {00, 01} is not matched the other way round).
+POS_MARK = " (?)"
+POS_NOTE = ("BMW untrimmed name from another version of this CAFD, matched by field position only "
+            "(this group's layout isn't packaged): unverified")
+
+
+def field_index(groups):
+    """groups (load()) -> {(address, start, end, mask): [(name, {value hex: value name}), ...]}, one per layout."""
+    idx = defaultdict(list)
+    for (a, _h), g in groups.items():
+        vals = defaultdict(dict)
+        for (st, en, mk, vh), vn in g["V"].items():
+            vals[(st, en, mk)][vh.upper()] = vn
+        for k, n in g["F"].items():
+            idx[(a,) + k].append((n, vals.get(k, {})))
+    return idx
+
+
+def field_match(idx, address, start, end, mask, hexes):
+    """(name, {value hex: value name}) for a function with these value codes, or None: the packaged layouts with
+    exactly this field that name no value code outside `hexes` must all give it the same name. Value names are
+    only kept where those layouts agree too."""
+    hexes = {h.upper() for h in hexes}
+    cand = [(n, v) for n, v in idx.get((address, int(start), int(end), norm_mask(mask)), ()) if set(v) <= hexes]
+    if not cand or len({n for n, _ in cand}) > 1:
+        return None
+    vals, clash = {}, set()
+    for _, v in cand:
+        for vh, vn in v.items():
+            if vals.setdefault(vh, vn) != vn:
+                clash.add(vh)
+    return cand[0][0], {vh: vn for vh, vn in vals.items() if vh not in clash}
 
 
 def value_name(label):

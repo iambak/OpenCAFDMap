@@ -197,6 +197,19 @@
           else if (p[0] === "V") g.V[p[3] + "|" + p[4] + "|" + p[5] + "|" + p[6]] = p[7];
         }
         br.close();
+        // field index for the fallback below: "addr|start|end|mask" -> [{n: name, v: {hex: value name}}], one per layout
+        res.pos = {};
+        for (var gk in res.groups) {
+          var ug = res.groups[gk], ga = gk.split("|")[0], byF = {};
+          for (var vk in ug.V) {
+            var vp = vk.split("|"), fk = vp[0] + "|" + vp[1] + "|" + vp[2];
+            (byF[fk] || (byF[fk] = {}))[vp[3].toUpperCase()] = ug.V[vk];
+          }
+          for (var fk2 in ug.F) {
+            var pk = ga + "|" + fk2;
+            (res.pos[pk] || (res.pos[pk] = [])).push({ n: ug.F[fk2], v: byF[fk2] || {} });
+          }
+        }
       }
     } catch (eU) {
       log("Error reading untrimmed names for CAFD_" + cafId + ": " + eU);
@@ -204,6 +217,32 @@
     }
     untrimmedCache[cafId] = res;
     return res;
+  }
+
+  // Field fallback (same rule as ocm/untrimmed.py field_match, issue #8) for groups whose layout isn't packaged:
+  // the layouts with exactly this address/start/end/mask that name no value code the function lacks must all agree.
+  // A guess (BMW reassigns bits between versions), so the name gets POS_MARK. -> {n, v: {hex: value name}} or null
+  var POS_MARK = " (?)";
+  var POS_NOTE = "BMW untrimmed name from another version of this CAFD, matched by field position only "
+    + "(this group's layout isn't packaged): unverified";
+  function fieldMatch(uPack, addr, uKey, hexes) {
+    var cand = (uPack && uPack.pos) ? uPack.pos[addr + "|" + uKey] : null;
+    if (!cand) return null;
+    var name = null, vals = {}, clash = {};
+    for (var i = 0; i < cand.length; i++) {
+      var ok = true;
+      for (var h in cand[i].v) if (!hexes[h]) { ok = false; break; }
+      if (!ok) continue;
+      if (name !== null && name !== cand[i].n) return null;
+      name = cand[i].n;
+      for (var h2 in cand[i].v) {
+        if (vals.hasOwnProperty(h2) && vals[h2] !== cand[i].v[h2]) clash[h2] = true;
+        else vals[h2] = cand[i].v[h2];
+      }
+    }
+    if (name === null) return null;
+    for (var h3 in clash) delete vals[h3];
+    return { n: name, v: vals };
   }
 
   // Same as ocm/untrimmed.py layout_hash: md5 of "start:end:mask;..." over the group's functions, 16 hex chars.
@@ -226,7 +265,7 @@
   function isPlaceholder(n) {
     n = String(n || "");
     return !n || n === "." || n === "custom_wert" || /^Group_[0-9A-Fa-f]{4}$/.test(n) || n.indexOf("_Byte_") >= 0
-      || /^\*?\s*wert_\d+(\s*\[[^\]]*\])?$/.test(n);
+      || /^.+_\d+_\d+_\d+$/.test(n) || /^\*?\s*wert_\d+(\s*\[[^\]]*\])?$/.test(n);
   }
 
   function normMask(m) {
@@ -347,6 +386,7 @@
 
     var uPack = loadUntrimmed(cafId);
     var untrimmedHits = 0;
+    var posHits = 0;
     var fnCounter = 1;
     var grpRenamed = 0;
     var fnRenamed = 0;
@@ -420,9 +460,27 @@
             fnRenamed++;
           }
           var uKey = start + "|" + end + "|" + normMask(maskStr);
+          var posMatch = null;
           if (uG && uG.F[uKey] && isPlaceholder(fn.getName())) {
             fn.setName(uG.F[uKey]);
             untrimmedHits++;
+          } else if (uPack && !(uG && uG.F[uKey])) {
+            var cpsH = fn.getCondParam(), fnHexes = {};
+            if (cpsH) for (var kh = 0; kh < cpsH.size(); kh++) {
+              var hh = extractTValueHex(cpsH.get(kh).getValues());
+              if (hh) fnHexes[String(hh).toUpperCase()] = true;
+            }
+            posMatch = fieldMatch(uPack, addr, uKey, fnHexes);
+            if (posMatch && isPlaceholder(fn.getName())) {
+              fn.setName(posMatch.n + POS_MARK);
+              var oldC = fn.getComment() ? String(fn.getComment()) : "";
+              fn.setComment(oldC ? oldC + " | " + POS_NOTE : POS_NOTE);
+              untrimmedHits++;
+              posHits++;
+            } else if (posMatch && String(fn.getName()).toLowerCase() !== posMatch.n.toLowerCase()
+                       && String(fn.getName()).toLowerCase() !== (posMatch.n + POS_MARK).toLowerCase()) {
+              posMatch = null;  // named otherwise (definition, cheat sheet): keep its values as they are
+            }
           }
 
           var defHex = extractTValueHex(fn.getDefVal());
@@ -454,6 +512,7 @@
 
               var finalLabel = customLabel ? customLabel : defaultWertLabel;
               var uVal = (uG && cpHex) ? uG.V[uKey + "|" + cpHex] : null;
+              if (!uVal && posMatch && cpHex) uVal = posMatch.v[String(cpHex).toUpperCase()] || null;
               if (uVal && isPlaceholder(finalLabel)) {
                 var hintAt = finalLabel.indexOf("[");
                 finalLabel = defaultWertLabel + " " + uVal + (hintAt >= 0 ? " " + finalLabel.substring(hintAt) : "");
@@ -493,7 +552,7 @@
     dumpSb.append('</CafdDefinition>\r\n');
 
     var stats = " (groups=" + grpRenamed + ", fns=" + fnRenamed + ", values=" + cpRenamed + ", read=" + interpUpdated
-      + ", untrimmed=" + untrimmedHits + ")";
+      + ", untrimmed=" + untrimmedHits + (posHits ? " incl. " + posHits + " by field position" : "") + ")";
     var pending = runtimeState.get(tag) === "pending" ? "; full labels follow once its definition is built" : "";
     if (!def && untrimmedHits) log("Labelled " + tag + " from untrimmed names only" + stats + pending);
     else if (!def) log("No definition for " + tag + (pending || ": press Build definitions, or see runtime_defs.log"));

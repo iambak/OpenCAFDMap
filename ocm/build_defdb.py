@@ -591,6 +591,8 @@ def apply_untrimmed(con, folder):
     r"""definitions\untrimmed\<CAFD id>.tsv.gz (ocm\untrimmed.py): BMW's untrimmed names keyed by datagroup layout.
     Every datagroup here whose layout hash matches gets the names (group names also by address as a fallback).
     Beats contributed definitions, cheat sheets and placeholders; my_names.tsv and names\*.tsv still win.
+    Functions still unnamed after that fall back to an exact field match, marked as unverified
+    (apply_untrimmed_fields, issue #8).
     Set-based: a few joins, not one UPDATE per name."""
     import untrimmed as U
     files = glob.glob(os.path.join(folder, "*.tsv.gz")) if folder and os.path.isdir(folder) else []
@@ -605,8 +607,12 @@ def apply_untrimmed(con, folder):
         CREATE TEMP TABLE u_v(cafd_id TEXT, address TEXT, hash TEXT, start INT, end INT, mask TEXT, hex TEXT, name TEXT);
     """)
     ids = [os.path.basename(p)[:8].upper() for p in files]
+    present = {r[0] for r in con.execute("SELECT DISTINCT cafd_id FROM cafd")}
+    fidx = {}
     for cid in ids:
         groups, fallback = U.load(cid, folder)
+        if cid in present:
+            fidx[cid] = U.field_index(groups)
         con.executemany("INSERT INTO u_g VALUES(?,?,?,?)", [(cid, a, "*", n) for a, n in fallback.items()]
                         + [(cid, a, h, g["G"]) for (a, h), g in groups.items() if g["G"]])
         con.executemany("INSERT INTO u_f VALUES(?,?,?,?,?,?,?)",
@@ -646,9 +652,47 @@ def apply_untrimmed(con, folder):
            AND u.address = f.address AND u.hash = h.hash AND u.start = f.start AND u.end = f.end
            AND u.mask = lower(f.mask) AND u.hex = val.hex AND val.label_source NOT IN ('local', 'community');
     """)
+    apply_untrimmed_fields(con, fidx)
     n = [con.execute(f"SELECT count(*) FROM {t} WHERE {c}='untrimmed'").fetchone()[0]
          for t, c in (("datagroup", "name_source"), ("func", "name_source"), ("val", "label_source"))]
-    print(f"  untrimmed names ({len(ids)} CAFD ids): {n[0]} groups, {n[1]} functions, {n[2]} values named")
+    p = [con.execute(f"SELECT count(*) FROM {t} WHERE {c}='untrimmed-pos'").fetchone()[0]
+         for t, c in (("func", "name_source"), ("val", "label_source"))]
+    print(f"  untrimmed names ({len(ids)} CAFD ids): {n[0]} groups, {n[1]} functions, {n[2]} values named"
+          + (f"; by field position (marked{U.POS_MARK}): {p[0]} functions, {p[1]} values" if any(p) else ""))
+
+
+def apply_untrimmed_fields(con, fidx):
+    r"""Field fallback (issue #8) for functions the layout match left as placeholders: a group whose layout isn't
+    packaged (e.g. one field split in two) borrows names by exact address/start/end/mask (untrimmed.field_match).
+    Fills only 'derived' placeholders, so contributed definitions, cheat sheets and names files keep priority
+    (a function they named the same way still gets the value names). Borrowed names end in untrimmed.POS_MARK
+    and use source 'untrimmed-pos', which pack-db never reads back."""
+    import untrimmed as U
+    fupd, vupd = [], []
+    for cid, idx in fidx.items():
+        if not idx:
+            continue
+        for fpk, addr, st, en, mk, fname, src, cmt in con.execute(
+                "SELECT f.pk, f.address, f.start, f.end, f.mask, f.name, f.name_source, f.comment FROM func f "
+                "JOIN cafd c ON c.pk=f.cafd_pk WHERE c.cafd_id=? AND f.name_source != 'untrimmed'", (cid,)).fetchall():
+            if (addr, st, en, U.norm_mask(mk)) not in idx:
+                continue
+            vals = con.execute("SELECT pk, idx, upper(hex), label, label_source FROM val WHERE func_pk=?",
+                               (fpk,)).fetchall()
+            m = U.field_match(idx, addr, st, en, mk, {v[2] for v in vals if v[2]})
+            if not m:
+                continue
+            name, vnames = m
+            if src == "derived":
+                fupd.append((name + U.POS_MARK, " | ".join(x for x in (cmt, U.POS_NOTE) if x), fpk))
+            elif (fname or "").strip().lower() != name.strip().lower():
+                continue
+            for vpk, vi, hx, label, src in vals:
+                if src == "derived" and hx in vnames:
+                    hint = label[label.index("["):] if label and "[" in label else ""
+                    vupd.append((f"wert_{vi + 1:02d} {vnames[hx]}" + (f" {hint}" if hint else ""), vpk))
+    con.executemany("UPDATE func SET name=?, name_source='untrimmed-pos', comment=? WHERE pk=?", fupd)
+    con.executemany("UPDATE val SET label=?, label_source='untrimmed-pos' WHERE pk=?", vupd)
 
 
 def apply_overrides(con):
