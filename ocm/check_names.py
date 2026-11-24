@@ -20,6 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config  # noqa: E402
+import versions  # noqa: E402
 
 HEX8 = re.compile(r"^[0-9A-F]{8}$")
 ADDR = re.compile(r"^[0-9A-F]{4}$")
@@ -27,19 +28,42 @@ MASK = re.compile(r"^[01]{1,64}b$")
 HEXV = re.compile(r"^([0-9A-F]{2})+$")
 
 
-def check_file(path, errors, warnings, keys):
-    rel = os.path.relpath(path, config.ROOT)
+def relpath(path):
+    """Path relative to the repository for messages; as given when it's on another drive (e.g. C: vs H:)."""
+    try:
+        return os.path.relpath(path, config.ROOT)
+    except ValueError:
+        return path
+
+
+def check_file(path, errors, warnings, keys, scoped_keys=None):
+    rel = relpath(path)
+    scoped = os.path.basename(os.path.dirname(os.path.abspath(path))).lower() == "versioned"
+    ncol = 9 if scoped else 8
     for ln, raw in enumerate(open(path, encoding="utf-8"), 1):
         line = raw.rstrip("\r\n")
         if not line.strip() or line.startswith("#"):
             continue
         f = line.split("\t")
         where = f"{rel}:{ln}"
-        if len(f) > 8:
-            errors.append(f"{where}: {len(f)} columns (max 8: cafd_id address start end mask value_hex name comment)")
+        if len(f) > ncol:
+            errors.append(f"{where}: {len(f)} columns (max {ncol}: cafd_id address start end mask value_hex name comment"
+                          + (" versions)" if scoped else "); names for some CAFD versions only go in names\\versioned\\ "
+                             "with a 9th column, versions"))
             continue
-        f = [x.strip() for x in f] + [""] * (8 - len(f))
-        cid, addr, st, en, mask, vhex, name, cmt = f
+        f = [x.strip() for x in f] + [""] * (ncol - len(f))
+        cid, addr, st, en, mask, vhex, name, cmt = f[:8]
+        rng = None
+        if scoped:
+            try:
+                rng = versions.ranges(f[8]) if f[8] else None
+            except ValueError as e:
+                errors.append(f"{where}: versions '{f[8]}': {e}")
+                continue
+            if not rng:
+                errors.append(f"{where}: versions is empty: every-version names go in names\\*.tsv (versions: "
+                              "062-, -052, 052-061, 062_010_106, ...)")
+                continue
         if not HEX8.match(cid):
             errors.append(f"{where}: cafd_id '{cid}' must be 8 upper-case hex digits")
         if not ADDR.match(addr):
@@ -65,6 +89,16 @@ def check_file(path, errors, warnings, keys):
         if name and not cmt and not vhex:  # value rows usually share the function's source
             warnings.append(f"{where}: no comment - please say where the name comes from")
         key = (cid, addr, st, en or st, mask, vhex)
+        if name and scoped:
+            # version-scoped rows conflict only where their ranges overlap; they win over every-version rows
+            for r in rng:
+                for prev_r, prev_name, prev_where in (scoped_keys if scoped_keys is not None else {}).get(key, []):
+                    if prev_name != name and versions.overlap(r, prev_r):
+                        errors.append(f"{where}: '{name}' conflicts with '{prev_name}' at {prev_where} for "
+                                      f"{versions.text(*r)}")
+                if scoped_keys is not None:
+                    scoped_keys.setdefault(key, []).append((r, name, where))
+            continue
         if name:
             prev = keys.get(key)
             # legacy and cheat-sheet names rank below names\*.tsv, so a different name there isn't a conflict
@@ -81,9 +115,10 @@ DEF_NAME = re.compile(r"^CAFD_([0-9A-F]{8})(?:_(\d{3})_(\d{3})_(\d{3}))?\.xml$",
 
 
 def check_untrimmed(path, errors, warnings):
-    r"""definitions\untrimmed\<CAFD id>.tsv.gz (ocm\untrimmed.py): kind address layout_hash start end mask value_hex name."""
+    r"""definitions\untrimmed\[transferred\[rejected\]]<CAFD id>.tsv.gz (ocm\untrimmed.py):
+    kind address layout_hash start end mask value_hex name [reason: rejected\ only]."""
     import gzip
-    rel = os.path.relpath(path, config.ROOT)
+    rel = relpath(path)
     if not re.fullmatch(r"[0-9A-F]{8}\.tsv\.gz", os.path.basename(path)):
         errors.append(f"{rel}: name it <8 upper-case hex CAFD id>.tsv.gz")
         return 0
@@ -96,8 +131,16 @@ def check_untrimmed(path, errors, warnings):
             f = (line.rstrip("\r\n").split("\t") + [""] * 8)[:8]
             kind, addr, h, st, en, mask, vhex, name = f
             where = f"{rel}:{ln}"
-            if kind not in ("G", "F", "V") or not ADDR.match(addr) or not name:
-                errors.append(f"{where}: expected G/F/V, a 4-hex address and a name")
+            if kind not in ("G", "F", "V", "R", "S") or not ADDR.match(addr) or not name:
+                errors.append(f"{where}: expected G/F/V/R/S, a 4-hex address and a name")
+            elif kind == "R" and not re.fullmatch(r"[0-9a-f]{12}", name):
+                errors.append(f"{where}: an R row's name is a 12-digit rule print (ocm\\untrimmed.py rule_print)")
+            elif kind == "S" and not re.fullmatch(r"\d{3}_\d{3}_\d{3}", name):
+                errors.append(f"{where}: an S row's name is the E-Sys Plus reference version (150_130_000)")
+            elif kind in ("R", "S"):
+                if kind == "R" and (not st.isdigit() or not en.isdigit() or not MASK.match(mask)):
+                    errors.append(f"{where}: start/end must be byte numbers and mask like 00000001b")
+                continue
             elif not (h == "*" and kind == "G") and not re.fullmatch(r"[0-9a-f]{16}", h):
                 errors.append(f"{where}: layout hash must be 16 lower-case hex digits (see ocm\\untrimmed.py)")
             elif kind != "G" and (not st.isdigit() or not en.isdigit() or not MASK.match(mask)):
@@ -113,10 +156,44 @@ def check_untrimmed(path, errors, warnings):
     return n
 
 
+def check_byindex(path, errors):
+    r"""definitions\untrimmed\transferred\raw\byindex\<CAFD id>.tsv.gz (ocm\untrimmed.py pack-esysplus):
+    kind address reference function_index value_hex name; kinds H (group), N (function), P (value), A (value
+    the reference has no name for)."""
+    import gzip
+    rel = relpath(path)
+    if not re.fullmatch(r"[0-9A-F]{8}\.tsv\.gz", os.path.basename(path)):
+        errors.append(f"{rel}: name it <8 upper-case hex CAFD id>.tsv.gz")
+        return 0
+    n = 0
+    try:
+        for ln, line in enumerate(gzip.open(path, "rt", encoding="utf-8"), 1):
+            if line.startswith("#") or not line.strip():
+                continue
+            n += 1
+            kind, addr, ref, idx, vhex, name = (line.rstrip("\r\n").split("\t") + [""] * 6)[:6]
+            where = f"{rel}:{ln}"
+            if kind not in ("H", "N", "P", "A") or not ADDR.match(addr) or not re.fullmatch(r"\d{3}_\d{3}_\d{3}", ref):
+                errors.append(f"{where}: expected H/N/P/A, a 4-hex address and a reference like 116_064_000")
+            elif kind != "H" and not idx.isdigit():
+                errors.append(f"{where}: function_index must be a number")
+            elif kind in ("P", "A") and not HEXV.match(vhex):
+                errors.append(f"{where}: value_hex must be upper-case hex bytes")
+            elif kind != "A" and not name:
+                errors.append(f"{where}: missing name")
+            elif VIN.search(name):
+                errors.append(f"{where}: contains something that looks like a VIN: remove it")
+            if len(errors) > 50:
+                break
+    except (OSError, EOFError) as e:
+        errors.append(f"{rel}: not a readable gzip file ({e})")
+    return n
+
+
 def check_xml(path, errors, warnings):
     """definitions\\**\\*.xml: a CafdDefinition (our definition format) or an FDL cheat sheet."""
     import xml.etree.ElementTree as ET
-    rel = os.path.relpath(path, config.ROOT)
+    rel = relpath(path)
     raw = open(path, "rb").read()
     text = raw.decode("utf-8", "replace")
     if "bmw.com/2005/psdz" in text:
@@ -164,6 +241,11 @@ def check_xml(path, errors, warnings):
                         errors.append(f"{rel}: {g.get('id')}/{f.get('name')}: value code '{c}' is not hex bytes")
         if not root.get("source") and not root.get("author"):
             warnings.append(f"{rel}: add source=\"...\" (or author) on <CafdDefinition> - where do the names come from?")
+        if root.get("versions") is not None:
+            try:
+                versions.ranges(root.get("versions"))
+            except ValueError as e:
+                errors.append(f"{rel}: versions=\"{root.get('versions')}\": {e}")
     elif tag == "FDL":
         # cheat sheets are often third-party files kept unchanged: a bad entry is skipped by the import,
         # so it's a warning, not a reason to reject the sheet
@@ -208,26 +290,36 @@ def main():
     a = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     files = a.files or (sorted(glob.glob(os.path.join(config.NAMES, "*.tsv")))
+                        + sorted(glob.glob(os.path.join(config.NAMES, "versioned", "*.tsv")))
                         + sorted(glob.glob(os.path.join(config.NAMES, "cheatsheet", "*.tsv")))
                         + sorted(glob.glob(os.path.join(config.CONTRIB, "**", "*.xml"), recursive=True))
-                        + sorted(glob.glob(os.path.join(config.CONTRIB, "untrimmed", "*.tsv.gz"))))
-    errors, warnings, keys = [], [], {}
+                        + sorted(glob.glob(os.path.join(config.CONTRIB, "untrimmed", "*.tsv.gz")))
+                        + sorted(glob.glob(os.path.join(config.CONTRIB, "untrimmed", "transferred", "*.tsv.gz")))
+                        + sorted(glob.glob(os.path.join(config.CONTRIB, "untrimmed", "transferred", "rejected",
+                                                        "*.tsv.gz")))
+                        + sorted(glob.glob(os.path.join(config.CONTRIB, "untrimmed", "transferred", "raw",
+                                                        "*.tsv.gz")))
+                        + sorted(glob.glob(os.path.join(config.CONTRIB, "untrimmed", "transferred", "raw",
+                                                        "byindex", "*.tsv.gz"))))
+    errors, warnings, keys, scoped_keys = [], [], {}, {}
     n_xml = n_xml_fn = n_untr = 0
     for p in files:
-        if p.lower().endswith(".tsv.gz"):
+        if p.lower().endswith(".tsv.gz") and os.path.basename(os.path.dirname(p)).lower() == "byindex":
+            n_untr += check_byindex(p, errors)
+        elif p.lower().endswith(".tsv.gz"):
             n_untr += check_untrimmed(p, errors, warnings)
         elif p.lower().endswith(".xml"):
             n_xml += 1
             n_xml_fn += check_xml(p, errors, warnings) or 0
         else:
-            check_file(p, errors, warnings, keys)
+            check_file(p, errors, warnings, keys, scoped_keys)
     for w in warnings:
         print("warning:", w)
     for e in errors:
         print("ERROR:", e)
     if n_untr:
         print(f"untrimmed packages: {n_untr} names")
-    print(f"{sum(1 for p in files if p.lower().endswith('.tsv'))} names files ({len(keys)} names), {n_xml} definition XMLs ({n_xml_fn} functions): "
+    print(f"{sum(1 for p in files if p.lower().endswith('.tsv'))} names files ({len(keys)} names{f', {sum(map(len, scoped_keys.values()))} version-scoped' if scoped_keys else ''}), {n_xml} definition XMLs ({n_xml_fn} functions): "
           f"{len(errors)} errors, {len(warnings)} warnings")
     if a.db:
         db = a.db if isinstance(a.db, str) else config.paths().db

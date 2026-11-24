@@ -29,7 +29,31 @@ cafd_id   address  start  end  mask       value_hex  name                    com
 - **name**: BMW's own name if you know it (`FesSportPlusMode`, `INBAND_RINGING`). Otherwise a short, clear description.
 - **comment**: **where the name comes from** (screenshot of tool X, BimmerCode diff, coding table, forum thread). This lets others judge and verify it.
 
-Names don't depend on the software version. A row applies to every version of that CAFD that has a function with exactly that address, byte range and mask.
+A row in `names\<ECU>.tsv` applies to every version of that CAFD that has a function with exactly that address, byte range and mask. For names that hold only for some versions, see below.
+
+### Names for some CAFD versions only
+When a group or function changes meaning between CAFD versions (a datagroup rebuilt in a new main version, a bit reused), put those rows in **`names\versioned\<ECU>.tsv`** with a 9th column, **versions**:
+
+```
+cafd_id   address  start  end  mask       value_hex  name                               comment                     versions
+000017BE  3072                                       LaMaster0                          E-Sys Plus 3.8.1, ref 076   062_010_106-
+000017BE  3070     0      0    00000001b             EM_FEMODE_0x01_CCM_0x0430_ACT      E-Sys Plus 3.8.1, ref 076   062-
+000017BE  3070     0      0    00000001b             TM_OLD_FUNCTION                    untrimmed, version 052      -052
+```
+
+| versions | means |
+|---|---|
+| `062` | every 062\_\*\_\* version |
+| `062_010_106` | exactly that version |
+| `062-` / `062_010_106-` | that version and newer |
+| `-052` / `-052_010_242` | up to that version |
+| `052-061` | from 052\_000\_000 to 061\_999\_999 (either end can be a full version) |
+| `-040, 062-` | several ranges, comma separated |
+
+- A versioned row wins over an every-version row of the same source for the versions it covers, so `names\<ECU>.tsv` can keep the common name and `names\versioned\` holds the exceptions.
+- Versioned rows for the same function may not overlap with different names; **Check contributions** reports it, and so does the check on every pull request.
+- The folder is separate on purpose: launchers that don't know the column ignore it instead of applying a versioned name to every version. OpenLauncher v3.0.0 is one of them; the next v3 (the previews built from `v3-testing`) applies these files. Send them here anyway: every launcher downloads names from `main`.
+- Contributed definition XMLs take the same ranges as `versions="..."` on `<CafdDefinition>` (checked here too; applied by the same launchers).
 
 ## Where names come from
 - **BimmerCode backup diffs.** Take a backup, change one option in BimmerCode, take another backup, then run:
